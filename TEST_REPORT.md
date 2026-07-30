@@ -31,7 +31,7 @@ npx tsc --noEmit
 ```bash
 npx vitest run
 ```
-**Result: pass** — 13 files, **436 tests passed, 0 failed, 0 skipped**.
+**Result: pass** — 13 files, **501 tests passed, 0 failed, 0 skipped**.
 
 ```bash
 npm run build
@@ -47,8 +47,8 @@ npx cap sync android
 node scripts/build-apk.mjs
 ```
 **Result: pass** — `BUILD SUCCESSFUL`, 267 actionable tasks.
-`release/Bight.apk`, 54.38 MB, debug-signed,
-SHA-256 `2be5748f577363d43cb817a75e8baa60b9310f2a8e2d2ea1e5d2171bf0f904cd`.
+`release/Bight.apk`, 54.36 MB, debug-signed,
+SHA-256 `d57ac2565ee8b436a5096fd3fb8e72228f84be2a1f66b2fe5604986312a4ee4c`.
 
 The APK's own entry list was read back and checked: 521 entries, `classes.dex`
 present, web assets present, the speech model present, and a debug signature
@@ -63,7 +63,7 @@ in `META-INF`. That readback is what caught bugs 8 and 9 below.
 | `src/core/chess/geometry.test.ts` | 44 | Movement vectors, ray tracing, blockers, pawn rules, and the chess.js cross-check |
 | `src/core/storage/repository.test.ts` | 41 | The repository contract, run against both IndexedDB and in-memory |
 | `src/core/progress/progress.test.ts` | 42 | Mastery scoring, weighting, streaks, achievements, statistics |
-| `src/core/session/engine.test.ts` | 36 | Session state machine, timers, pause, retry, limits, settings validation |
+| `src/core/session/engine.test.ts` | 55 | Session state machine, auto-advance, wrong-answer handling, multi-square completion, input locking, timers, pause, limits, settings validation |
 | `src/services/voice/grammar.test.ts` | 29 | Voice vocabulary, parsing, aliases, confidence handling |
 | `src/core/chess/legal.test.ts` | 27 | chess.js bridge: legality, pins, castling, en passant, promotion |
 | `src/core/chess/square.test.ts` | 27 | Coordinates, square colour, orientation mapping, quadrants |
@@ -72,8 +72,8 @@ in `META-INF`. That readback is what caught bugs 8 and 9 below.
 | `src/ui/components/Board.test.tsx` | 26 | Board rendering, taps, orientation, marks, reveal timing, moves |
 | `src/core/chess/position.test.ts` | 23 | FEN parsing and serialisation |
 | `src/core/chess/knightRoute.test.ts` | 22 | BFS knight routing over the whole board |
-| `src/ui/App.integration.test.tsx` | 67 | Whole-app flows: navigation, every mode opening, answering, settings, backup |
-| **Total** | **436** | |
+| `src/ui/App.integration.test.tsx` | 113 | Whole-app flows: navigation, every mode opening, absence of progression controls in every mode, auto-advance, wrong-answer flashes, settings, backup |
+| **Total** | **501** | |
 
 ---
 
@@ -115,7 +115,10 @@ in `META-INF`. That readback is what caught bugs 8 and 9 below.
 | Taps register correctly | Yes |
 | Occupied-square taps work in coordinate mode | Yes — explicitly, with the full starting position |
 | Drag and tap-to-move both work | Tap: yes. Drag: partial |
-| Multiple-square selection and submission | Yes — select, deselect, submit, and separate missed/extra reporting |
+| Multiple-square selection and completion | Yes — correct squares accumulate, wrong taps flash without losing progress, repeat taps are ignored, and the set completes itself |
+| No Next/Continue/Submit control in any mode | Yes — asserted for every registered mode and variant, by test id and accessible name |
+| Correct answers advance with no button press | Yes — engine tests plus live browser verification |
+| Wrong answers keep the question and reveal nothing | Yes |
 | Orientation changes map taps correctly | Yes — the same square is reported in both orientations |
 | Labels settings work | Yes |
 | Timer, pause, resume, exit, retry | Yes |
@@ -131,7 +134,7 @@ in `META-INF`. That readback is what caught bugs 8 and 9 below.
 | Production web build succeeds | Pass |
 | Capacitor sync succeeds | Pass |
 | Android Gradle build succeeds | Pass |
-| Installable APK produced | Pass — 54.38 MB, debug-signed, contents verified |
+| Installable APK produced | Pass — 54.36 MB, debug-signed, contents verified |
 | App launches in an emulator | **Not run** — no emulator or system image installed |
 | Emulator smoke tests | **Not run**, same reason |
 | Portrait layout at S25 Ultra and a smaller phone | **Browser only** — checked at 1440×3120 and 360×640 equivalents |
@@ -156,7 +159,7 @@ phone viewports, so layout and computed styles are genuinely measured.
 | Home screen renders with streak, daily goal, week strip, recommended modes | Pass |
 | Knight vision session opens | Pass — board 379×379, 64 squares, knight rendered |
 | Square touch target | 47 CSS px per square |
-| Selecting all 8 knight targets on d4 and submitting | Pass — "All 8 squares correct." |
+| Selecting all 8 knight targets on d4 | Pass — the set completed itself and loaded the next question |
 | Board colours | Light `rgb(235,236,208)` = `#EBECD0`, dark `rgb(119,149,86)` = `#779556` — the green/cream board |
 | Two-tap keypad: prompted d4 | Ranks disabled until a file is tapped; after tapping `d` the readout showed `d` and ranks enabled; tapping `4` gave "d4 is correct." |
 | Free-text inputs anywhere in coordinate entry | **Zero** — the Android keyboard cannot open |
@@ -179,6 +182,20 @@ dark text. Board colours are **identical in both themes**, as required.
 This also confirms the one item listed as partial above — session data really
 does flow through persistence into the Progress screen — since the progress
 figures came from two sessions actually played in the browser.
+
+### Continuous-flow verification (real browser)
+
+Run after the auto-advance refactor, driving the live app:
+
+| Check | Result |
+| --- | --- |
+| Buttons present during a session | Only `pause` and `end-session`. No Next, Submit, Continue or feedback element in any mode. |
+| Correct tap in coordinate mode | Prompt advanced `g1` → `g5` with no press and no result panel |
+| Wrong tap | `square--wrong` present 60ms after the tap, gone after 600ms; prompt still `g5`; the correct square was **not** marked |
+| Knight vision, six targets from c2 | Counter ran `6 left` → `1 left`, each correct square holding `square--correct` |
+| Wrong tap mid-set (h8) | Flashed red; all five earlier selections survived; no result panel |
+| Repeat tap on an already-correct square | Ignored — no red flash, counter unchanged |
+| Final correct square | Question completed itself: knight moved c2 → b6, counter reset to `6 left`, selections cleared |
 
 ## Bugs found by the test suite
 

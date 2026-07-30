@@ -1,22 +1,26 @@
 /**
  * The session runner: the screen every mode is played on.
  *
- * It owns no chess knowledge. The question says what to draw and what answer
- * control to show; the engine says what happens next. That is what lets eleven
- * modes share one screen without a switch on mode id anywhere.
+ * It owns no chess knowledge and no answer logic. The question says what to
+ * draw and which answer control to show; the engine decides whether an answer
+ * completes the question. That is what lets eleven modes share one screen.
+ *
+ * Practice is continuous — there is no Next button, no Submit button and no
+ * result screen between questions. A correct answer replaces the question
+ * immediately; a wrong one flashes red and leaves the question alone.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Board, buildMarks, type SquareMark } from '../components/Board';
+import { Board, type SquareMark } from '../components/Board';
 import { ChoiceButtons, ColorChoice, CoordinateKeypad } from '../components/CoordinateKeypad';
 import {
-  advance,
+  clearRejection,
   exitSession,
   pause,
   questionSecondsLeft,
   resume,
   restartSession,
-  retryCurrent,
+  selectSquare,
   sessionProgress,
   sessionSecondsLeft,
   startSession,
@@ -36,6 +40,9 @@ import { speak } from '../../services/speech';
 import { vibrate } from '../../services/haptics';
 import { playTone } from '../../services/sound';
 
+/** How long a wrong input stays red. Long enough to notice, short enough to retry. */
+const FLASH_MS = 420;
+
 export interface SessionScreenProps {
   settings: SessionSettings;
   onExit: () => void;
@@ -45,12 +52,11 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
   const app = useApp();
   const [weights, setWeights] = useState<ReadonlyMap<SquareName, number> | undefined>(undefined);
   const [state, setState] = useState<SessionState | null>(null);
-  const [selected, setSelected] = useState<SquareName[]>([]);
-  const [path, setPath] = useState<SquareName[]>([]);
+  const [flashToken, setFlashToken] = useState(0);
   const savedRef = useRef(false);
 
-  // Adaptive weights are loaded before the first question so the very first
-  // prompt already favours weak squares.
+  // Adaptive weights load before the first question so the very first prompt
+  // already favours weak squares.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -72,7 +78,6 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
 
   const deps = useMemo(() => ({ weights }), [weights]);
 
-  // Start once the weights question is settled either way.
   useEffect(() => {
     if (settings.adaptive && weights === undefined) return;
     setState((current) => current ?? startSession(settings, { weights }));
@@ -80,12 +85,7 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
   }, [settings, weights]);
 
   const question = state?.current ?? null;
-
-  // Clear per-question answer state whenever the question changes.
-  useEffect(() => {
-    setSelected([]);
-    setPath([]);
-  }, [question?.id]);
+  const rejected = state?.rejected ?? null;
 
   // Speak the prompt when the user has asked for it.
   useEffect(() => {
@@ -93,40 +93,50 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
     if (question.prompt.speech !== undefined) void speak(question.prompt.speech);
   }, [question, settings.speakPrompts]);
 
-  // Timer pump. One interval for the whole session; the engine decides whether
-  // anything actually changed.
+  // Timer pump. The engine decides whether anything actually changed.
   useEffect(() => {
-    if (state === null || state.phase === 'finished' || state.phase === 'paused') return;
+    if (state === null || state.phase !== 'question') return;
     const timer = window.setInterval(() => {
       setState((current) => (current === null ? current : tick(current, deps)));
     }, 200);
     return () => window.clearInterval(timer);
   }, [state?.phase, deps, state]);
 
-  const feedbackFor = useCallback(
-    (correct: boolean) => {
-      if (settings.haptics) vibrate(correct ? 'light' : 'error');
-      if (settings.sound) playTone(correct ? 'correct' : 'wrong');
+  // A rejection flashes red, then clears itself. Nothing blocks on it.
+  useEffect(() => {
+    if (rejected === null) return;
+    setFlashToken(rejected.token);
+    if (settings.haptics) vibrate('error');
+    if (settings.sound) playTone('wrong');
+    const timer = window.setTimeout(() => {
+      setState((current) => (current === null ? current : clearRejection(current)));
+    }, FLASH_MS);
+    return () => window.clearTimeout(timer);
+  }, [rejected, settings.haptics, settings.sound]);
+
+  const advanceToken = state?.advanceToken ?? 0;
+
+  // A correct answer is acknowledged with a tick of sound/haptics only; the
+  // question has already been replaced by the time this runs.
+  useEffect(() => {
+    if (advanceToken === 0) return;
+    if (settings.haptics) vibrate('light');
+    if (settings.sound) playTone('correct');
+  }, [advanceToken, settings.haptics, settings.sound]);
+
+  const answer = useCallback(
+    (submitted: SubmittedAnswer, source: AnswerSource) => {
+      setState((current) => (current === null ? current : submitAnswer(current, submitted, source, deps)));
     },
-    [settings.haptics, settings.sound],
+    [deps],
   );
 
-  const submit = useCallback(
-    (answer: SubmittedAnswer, source: AnswerSource) => {
-      setState((current) => {
-        if (current === null) return current;
-        const next = submitAnswer(current, answer, source, deps);
-        const grade = next.lastGrade;
-        if (grade !== null && next !== current) feedbackFor(grade.correct);
-        return next;
-      });
+  const tapSquare = useCallback(
+    (square: SquareName) => {
+      setState((current) => (current === null ? current : selectSquare(current, square, 'touch', deps)));
     },
-    [deps, feedbackFor],
+    [deps],
   );
-
-  const goNext = useCallback(() => {
-    setState((current) => (current === null ? current : advance(current, deps)));
-  }, [deps]);
 
   // Persist once, when the session finishes.
   useEffect(() => {
@@ -195,22 +205,29 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
   const progress = sessionProgress(state, now);
   const perQuestion = questionSecondsLeft(state, now);
   const totalLeft = sessionSecondsLeft(state, now);
-  const showingFeedback = state.phase === 'feedback';
   const paused = state.phase === 'paused';
-  const grade = state.lastGrade;
 
-  const marks = new Map<SquareName, SquareMark>(
-    buildMarks({
-      prompt: question?.board.highlights ?? [],
-      hints: question?.board.showHints === true ? hintSquares(question) : [],
-      selected,
-      correct: showingFeedback ? correctlySelected(question, selected) : [],
-      wrong: showingFeedback ? (grade?.extra ?? []) : [],
-      missed: showingFeedback ? (grade?.missed ?? []) : [],
-    }),
-  );
+  const flashing = rejected !== null && rejected.token === flashToken;
+  const flashSquares = flashing ? rejected.squares : [];
 
-  const badges = new Map(path.map((square, index) => [square, index + 1] as const));
+  // Correct selections stay green; a rejected square flashes red over the top.
+  const marks = new Map<SquareName, SquareMark>();
+  for (const square of question?.board.highlights ?? []) marks.set(square, 'prompt');
+  if (question?.board.showHints === true && question.expected.kind === 'move') {
+    marks.set(question.expected.to, 'hint');
+  }
+  for (const square of state.selected) marks.set(square, 'correct');
+  for (const square of flashSquares) marks.set(square, 'wrong');
+
+  const badges =
+    question?.expected.kind === 'square-path'
+      ? new Map(state.selected.map((square, index) => [square, index + 1] as const))
+      : undefined;
+
+  const remaining =
+    question?.expected.kind === 'square-set'
+      ? question.expected.squares.length - state.selected.length
+      : null;
 
   return (
     <div data-testid="session-screen">
@@ -219,14 +236,17 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
           <strong>{question?.variantLabel ?? 'Session'}</strong>
           <div className="session-bar__meta">
             {describeLimit(state.settings.limit)} · {describeTimer(state.settings.questionTimer)}
-            {question?.semantics !== null && question?.semantics !== undefined
+            {question?.semantics != null
               ? ` · ${question.semantics === 'geometry' ? 'Geometry' : 'Legal moves'}`
               : ''}
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>
           {perQuestion !== null ? (
-            <div className={`timer${perQuestion <= 3 ? ' timer--urgent' : ''}`} data-testid="question-timer">
+            <div
+              className={`timer${perQuestion <= 3 ? ' timer--urgent' : ''}`}
+              data-testid="question-timer"
+            >
               {perQuestion.toFixed(1)}s
             </div>
           ) : totalLeft !== null ? (
@@ -236,6 +256,7 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
           ) : null}
           <div className="session-bar__meta">
             {progress.total === null ? `${progress.done}` : `${progress.done} / ${progress.total}`}
+            {state.streak >= 3 ? ` · ${state.streak} in a row` : ''}
           </div>
         </div>
       </div>
@@ -244,7 +265,10 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
         <div
           className="progress__fill"
           style={{
-            width: progress.total === null ? '100%' : `${Math.min(100, (progress.done / progress.total) * 100)}%`,
+            width:
+              progress.total === null
+                ? '100%'
+                : `${Math.min(100, (progress.done / progress.total) * 100)}%`,
           }}
         />
       </div>
@@ -280,103 +304,51 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
             {question?.prompt.detail !== undefined ? (
               <p className="prompt__detail">{question.prompt.detail}</p>
             ) : null}
+            {remaining !== null ? (
+              <p className="prompt__detail" data-testid="remaining-count">
+                {remaining} left
+              </p>
+            ) : null}
           </div>
 
           {question !== null ? (
             <Board
+              key={question.id}
               fen={question.board.fen}
               orientation={question.board.orientation}
               labels={question.board.labels}
               marks={marks}
-              badges={badges.size > 0 ? badges : undefined}
+              badges={badges}
               hidden={question.board.hidden ?? false}
               revealMs={question.board.revealMs}
               decorativePieces={question.board.decorativePieces ?? false}
-              disabled={showingFeedback}
-              movableSquares={
-                question.expected.kind === 'move' ? [question.expected.from] : []
-              }
+              movableSquares={question.expected.kind === 'move' ? [question.expected.from] : []}
               onMove={
                 question.expected.kind === 'move'
-                  ? (from, to) => submit({ kind: 'move', from, to }, 'drag')
+                  ? (from, to) => answer({ kind: 'move', from, to }, 'drag')
                   : undefined
               }
-              onSquareTap={(square) => {
-                if (showingFeedback || question === null) return;
-                const kind = question.expected.kind;
-                if (kind === 'single-square') {
-                  submit({ kind: 'single-square', square }, 'touch');
-                } else if (kind === 'square-set') {
-                  setSelected((current) =>
-                    current.includes(square)
-                      ? current.filter((s) => s !== square)
-                      : [...current, square],
-                  );
-                } else if (kind === 'square-path') {
-                  setPath((current) =>
-                    current[current.length - 1] === square ? current.slice(0, -1) : [...current, square],
-                  );
-                }
-              }}
+              onSquareTap={tapSquare}
             />
           ) : null}
 
           <AnswerControls
             question={question}
-            disabled={showingFeedback}
-            selectedCount={selected.length}
-            pathLength={path.length}
-            onCoordinate={(square) => submit({ kind: 'coordinate', square }, 'keypad')}
-            onColor={(color) => submit({ kind: 'square-color', color }, 'touch')}
-            onChoice={(choice) => submit({ kind: 'choice', choice }, 'touch')}
-            onSubmitSet={() => submit({ kind: 'square-set', squares: selected }, 'touch')}
-            onSubmitPath={() => submit({ kind: 'square-path', squares: path }, 'touch')}
-            onClearPath={() => setPath([])}
+            flashing={flashing}
+            onCoordinate={(square) => answer({ kind: 'coordinate', square }, 'keypad')}
+            onColor={(color) => answer({ kind: 'square-color', color }, 'touch')}
+            onChoice={(choice) => answer({ kind: 'choice', choice }, 'touch')}
           />
 
-          {showingFeedback && grade !== null ? (
-            <div
-              className={`feedback feedback--${grade.correct ? 'correct' : 'wrong'}`}
-              role="status"
-              data-testid="feedback"
-            >
-              {grade.explanation}
-            </div>
-          ) : null}
-
           <div className="button-row" style={{ marginTop: 'var(--gap)' }}>
-            {showingFeedback ? (
-              <>
-                <button
-                  type="button"
-                  className="button button--primary"
-                  onClick={goNext}
-                  data-testid="next-question"
-                >
-                  Next
-                </button>
-                {grade?.correct === false &&
-                (state.settings.retry === 'immediate' || state.settings.retry === 'both') ? (
-                  <button
-                    type="button"
-                    className="button"
-                    onClick={() => setState(retryCurrent(state))}
-                    data-testid="retry-question"
-                  >
-                    Try again
-                  </button>
-                ) : null}
-              </>
-            ) : (
-              <button
-                type="button"
-                className="button"
-                onClick={() => setState(pause(state))}
-                data-testid="pause"
-              >
-                Pause
-              </button>
-            )}
+            <button
+              type="button"
+              className="button"
+              onClick={() => setState(pause(state))}
+              data-testid="pause"
+            >
+              Pause
+            </button>
             <button
               type="button"
               className="button button--danger"
@@ -421,92 +393,40 @@ function PromptCoordinate({
   );
 }
 
+/**
+ * The answer surface for the current question.
+ *
+ * Board-answered modes render nothing here: their answer is the board itself,
+ * and there is no confirmation step to provide a button for.
+ */
 function AnswerControls({
   question,
-  disabled,
-  selectedCount,
-  pathLength,
+  flashing,
   onCoordinate,
   onColor,
   onChoice,
-  onSubmitSet,
-  onSubmitPath,
-  onClearPath,
 }: {
   question: Question | null;
-  disabled: boolean;
-  selectedCount: number;
-  pathLength: number;
+  flashing: boolean;
   onCoordinate: (square: SquareName) => void;
   onColor: (color: 'light' | 'dark') => void;
   onChoice: (choice: string) => void;
-  onSubmitSet: () => void;
-  onSubmitPath: () => void;
-  onClearPath: () => void;
 }) {
   if (question === null) return null;
 
   switch (question.expected.kind) {
     case 'coordinate':
-      return (
-        <CoordinateKeypad onSubmit={onCoordinate} disabled={disabled} resetKey={question.id} />
-      );
+      return <CoordinateKeypad onSubmit={onCoordinate} resetKey={question.id} flashWrong={flashing} />;
     case 'square-color':
-      return <ColorChoice onChoose={onColor} disabled={disabled} />;
+      return <ColorChoice onChoose={onColor} flashWrong={flashing} />;
     case 'choice':
       return (
-        <ChoiceButtons choices={question.expected.choices} onChoose={onChoice} disabled={disabled} />
-      );
-    case 'square-set':
-      return (
-        <div className="button-row" style={{ marginTop: 'var(--gap)' }}>
-          <button
-            type="button"
-            className="button button--primary"
-            onClick={onSubmitSet}
-            disabled={disabled}
-            data-testid="submit-set"
-          >
-            Submit {selectedCount > 0 ? `(${selectedCount})` : ''}
-          </button>
-        </div>
-      );
-    case 'square-path':
-      return (
-        <div className="button-row" style={{ marginTop: 'var(--gap)' }}>
-          <button
-            type="button"
-            className="button button--primary"
-            onClick={onSubmitPath}
-            disabled={disabled || pathLength === 0}
-            data-testid="submit-path"
-          >
-            Submit route ({pathLength})
-          </button>
-          <button
-            type="button"
-            className="button"
-            onClick={onClearPath}
-            disabled={disabled || pathLength === 0}
-          >
-            Clear
-          </button>
-        </div>
+        <ChoiceButtons choices={question.expected.choices} onChoose={onChoice} flashWrong={flashing} />
       );
     case 'single-square':
+    case 'square-set':
+    case 'square-path':
     case 'move':
       return null;
   }
-}
-
-/** Squares the user picked that were actually part of the answer. */
-function correctlySelected(question: Question | null, selected: readonly SquareName[]): SquareName[] {
-  if (question === null || question.expected.kind !== 'square-set') return [];
-  return selected.filter((square) => question.expected.kind === 'square-set' && question.expected.squares.includes(square));
-}
-
-/** Destination markers, only when the mode enabled hints. */
-function hintSquares(question: Question): SquareName[] {
-  if (question.expected.kind === 'move') return [question.expected.to];
-  return [];
 }

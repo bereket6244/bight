@@ -25,6 +25,17 @@ function renderApp() {
   );
 }
 
+/** The square currently highlighted as the prompt. */
+function currentPromptSquare(): string {
+  const el = document.querySelector('.square--prompt');
+  return (el as HTMLElement | null)?.dataset.square ?? '';
+}
+
+/** The coordinate shown as the prompt text. */
+function currentPromptCoordinate(): string {
+  return screen.getByTestId('prompt-coordinate').textContent?.trim() ?? '';
+}
+
 function renderSession(overrides: Partial<SessionSettings> = {}) {
   const settings: SessionSettings = {
     ...defaultSettings('square-color', 'coordinate'),
@@ -109,28 +120,80 @@ describe('every mode opens and asks a real question', () => {
   );
 });
 
+describe('no manual progression controls exist anywhere', () => {
+  /**
+   * The guarantee this whole refactor exists to provide: no mode may render a
+   * Next, Continue or Submit control, and no blocking result panel may appear
+   * between questions.
+   */
+  it.each(allModeVariants().map(({ mode, variant }) => [`${mode.id}/${variant.id}`, mode.id, variant.id]))(
+    'has no Next/Submit/feedback in %s',
+    async (_label, modeId, variantId) => {
+      renderSession({
+        modeId: modeId as SessionSettings['modeId'],
+        variantId,
+        limit: { kind: 'questions', count: 5 },
+      });
+
+      await screen.findByTestId('session-screen');
+
+      expect(screen.queryByTestId('next-question')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('submit-set')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('submit-path')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('retry-question')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('feedback')).not.toBeInTheDocument();
+
+      expect(screen.queryByRole('button', { name: /^next$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^continue$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^submit/i })).not.toBeInTheDocument();
+
+      // Only session-level controls remain.
+      expect(screen.getByTestId('pause')).toBeInTheDocument();
+      expect(screen.getByTestId('end-session')).toBeInTheDocument();
+    },
+  );
+});
+
 describe('answering a coordinate question', () => {
-  it('accepts an answer from the two-tap keypad and advances', async () => {
+  it('advances immediately on a correct keypad answer, with no Next', async () => {
     const user = userEvent.setup();
     renderSession({
       modeId: 'square-to-coordinate',
       variantId: 'standard',
-      limit: { kind: 'questions', count: 5 },
+      limit: { kind: 'questions', count: 10 },
     });
 
     await screen.findByTestId('session-screen');
-    expect(screen.getByTestId('keypad')).toBeInTheDocument();
+    const first = currentPromptSquare();
 
     // Ranks are inert until a file has been chosen - the two-step rule.
-    expect(screen.getByTestId('key-rank-4')).toBeDisabled();
-    await user.click(screen.getByTestId('key-file-e'));
-    expect(screen.getByTestId('key-rank-4')).toBeEnabled();
-    await user.click(screen.getByTestId('key-rank-4'));
+    expect(screen.getByTestId(`key-rank-${first[1]}`)).toBeDisabled();
+    await user.click(screen.getByTestId(`key-file-${first[0]}`));
+    expect(screen.getByTestId(`key-rank-${first[1]}`)).toBeEnabled();
+    await user.click(screen.getByTestId(`key-rank-${first[1]}`));
 
-    expect(await screen.findByTestId('feedback')).toBeInTheDocument();
+    // A new question is already on screen; nothing was pressed to get here.
+    await waitFor(() => expect(currentPromptSquare()).not.toBe(first));
+    expect(screen.queryByTestId('feedback')).not.toBeInTheDocument();
+  });
 
-    await user.click(screen.getByTestId('next-question'));
-    await waitFor(() => expect(screen.queryByTestId('feedback')).not.toBeInTheDocument());
+  it('flashes red and keeps the question on a wrong coordinate', async () => {
+    const user = userEvent.setup();
+    renderSession({ modeId: 'square-to-coordinate', variantId: 'standard' });
+
+    await screen.findByTestId('session-screen');
+    const target = currentPromptSquare();
+    const wrongFile = target[0] === 'a' ? 'h' : 'a';
+
+    await user.click(screen.getByTestId(`key-file-${wrongFile}`));
+    await user.click(screen.getByTestId(`key-rank-${target[1]}`));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('keypad-readout').className).toContain('keypad__readout--wrong'),
+    );
+    // Same question, and the answer is not revealed.
+    expect(currentPromptSquare()).toBe(target);
+    expect(screen.queryByTestId('feedback')).not.toBeInTheDocument();
   });
 
   it('never opens a text input for coordinate entry', async () => {
@@ -142,22 +205,22 @@ describe('answering a coordinate question', () => {
 });
 
 describe('answering by tapping the board', () => {
-  it('accepts a tap on the prompted square', async () => {
+  it('advances immediately on a correct tap', async () => {
     const user = userEvent.setup();
     renderSession({
       modeId: 'coordinate-to-square',
       variantId: 'standard',
-      limit: { kind: 'questions', count: 5 },
+      limit: { kind: 'questions', count: 10 },
     });
 
     await screen.findByTestId('session-screen');
-    const coordinate = screen.getByTestId('prompt-coordinate').textContent?.trim() ?? '';
+    const coordinate = currentPromptCoordinate();
     expect(coordinate).toMatch(/^[a-h][1-8]$/);
 
     await user.click(screen.getByTestId(`square-${coordinate}`));
 
-    const feedback = await screen.findByTestId('feedback');
-    expect(feedback.className).toContain('feedback--correct');
+    await waitFor(() => expect(currentPromptCoordinate()).not.toBe(coordinate));
+    expect(screen.queryByTestId('feedback')).not.toBeInTheDocument();
   });
 
   it('registers a tap on an occupied square when pieces are shown', async () => {
@@ -166,83 +229,176 @@ describe('answering by tapping the board', () => {
       modeId: 'coordinate-to-square',
       variantId: 'standard',
       layout: 'starting',
-      limit: { kind: 'questions', count: 5 },
+      limit: { kind: 'questions', count: 10 },
     });
 
     await screen.findByTestId('session-screen');
-    const coordinate = screen.getByTestId('prompt-coordinate').textContent?.trim() ?? '';
+    const coordinate = currentPromptCoordinate();
     await user.click(screen.getByTestId(`square-${coordinate}`));
 
-    const feedback = await screen.findByTestId('feedback');
-    expect(feedback.className).toContain('feedback--correct');
+    await waitFor(() => expect(currentPromptCoordinate()).not.toBe(coordinate));
   });
 
-  it('marks a wrong square as incorrect and names the right one', async () => {
+  it('flashes the wrong square red and keeps the question, revealing nothing', async () => {
     const user = userEvent.setup();
     renderSession({ modeId: 'coordinate-to-square', variantId: 'standard' });
 
     await screen.findByTestId('session-screen');
-    const coordinate = screen.getByTestId('prompt-coordinate').textContent?.trim() ?? '';
+    const coordinate = currentPromptCoordinate();
     const wrong = coordinate === 'a1' ? 'h8' : 'a1';
 
     await user.click(screen.getByTestId(`square-${wrong}`));
-    const feedback = await screen.findByTestId('feedback');
-    expect(feedback.className).toContain('feedback--wrong');
-    expect(feedback.textContent).toContain(coordinate);
+
+    await waitFor(() =>
+      expect(screen.getByTestId(`square-${wrong}`).className).toContain('square--wrong'),
+    );
+    // The question is unchanged and the correct square is not highlighted.
+    expect(currentPromptCoordinate()).toBe(coordinate);
+    expect(screen.getByTestId(`square-${coordinate}`).className).not.toContain('square--correct');
+    expect(screen.queryByTestId('feedback')).not.toBeInTheDocument();
+  });
+
+  it('accepts the correct square straight after a wrong one', async () => {
+    const user = userEvent.setup();
+    renderSession({
+      modeId: 'coordinate-to-square',
+      variantId: 'standard',
+      limit: { kind: 'questions', count: 10 },
+    });
+
+    await screen.findByTestId('session-screen');
+    const coordinate = currentPromptCoordinate();
+    const wrong = coordinate === 'a1' ? 'h8' : 'a1';
+
+    await user.click(screen.getByTestId(`square-${wrong}`));
+    await user.click(screen.getByTestId(`square-${coordinate}`));
+
+    await waitFor(() => expect(currentPromptCoordinate()).not.toBe(coordinate));
   });
 });
 
-describe('multi-square selection', () => {
-  it('selects, deselects and submits a set of squares', async () => {
+describe('multi-square questions complete themselves', () => {
+  /** The knight's attacked squares, derived independently of the app. */
+  function knightTargetsOnBoard(): string[] {
+    const origin = (document.querySelector('.piece')?.closest('[data-square]') as HTMLElement | null)
+      ?.dataset.square as string;
+    const f = origin.charCodeAt(0) - 97;
+    const r = Number(origin[1]) - 1;
+    return [
+      [1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2],
+    ]
+      .map(([df, dr]) => [f + (df as number), r + (dr as number)])
+      .filter(([x, y]) => (x as number) >= 0 && (x as number) < 8 && (y as number) >= 0 && (y as number) < 8)
+      .map(([x, y]) => String.fromCharCode(97 + (x as number)) + ((y as number) + 1));
+  }
+
+  it('keeps correct squares selected and advances on the last one', async () => {
     const user = userEvent.setup();
     renderSession({
       modeId: 'knight-vision',
       variantId: 'attack-squares',
-      limit: { kind: 'questions', count: 5 },
+      limit: { kind: 'questions', count: 10 },
     });
 
     await screen.findByTestId('session-screen');
-    const submit = screen.getByTestId('submit-set');
+    const targets = knightTargetsOnBoard();
+    const remaining = screen.getByTestId('remaining-count').textContent;
+    expect(remaining).toBe(`${targets.length} left`);
 
-    // Selecting marks the square; selecting again clears it.
-    await user.click(screen.getByTestId('square-a1'));
-    expect(screen.getByTestId('square-a1')).toHaveAttribute('aria-pressed', 'true');
-    expect(submit.textContent).toContain('1');
+    for (let i = 0; i < targets.length - 1; i += 1) {
+      await user.click(screen.getByTestId(`square-${targets[i]}`));
+      // Each correct square stays visibly selected.
+      expect(screen.getByTestId(`square-${targets[i]}`).className).toContain('square--correct');
+    }
 
-    await user.click(screen.getByTestId('square-a1'));
-    expect(screen.getByTestId('square-a1')).toHaveAttribute('aria-pressed', 'false');
-
-    // Nothing is graded until Submit is pressed.
+    // Still the same question, no confirmation shown.
     expect(screen.queryByTestId('feedback')).not.toBeInTheDocument();
-    await user.click(submit);
-    expect(await screen.findByTestId('feedback')).toBeInTheDocument();
+
+    const before = knightTargetsOnBoard().join();
+    await user.click(screen.getByTestId(`square-${targets[targets.length - 1]}`));
+
+    // The last correct square completed the question by itself.
+    await waitFor(() => expect(knightTargetsOnBoard().join()).not.toBe(before));
+    expect(screen.queryByTestId('feedback')).not.toBeInTheDocument();
   });
 
-  it('reports missed and wrongly-selected squares separately', async () => {
+  it('flashes a wrong square red and preserves earlier correct selections', async () => {
     const user = userEvent.setup();
     renderSession({ modeId: 'knight-vision', variantId: 'attack-squares' });
 
     await screen.findByTestId('session-screen');
-    // Submit an empty answer: everything is missed, nothing is extra.
-    await user.click(screen.getByTestId('submit-set'));
+    const targets = knightTargetsOnBoard();
+    const origin = (document.querySelector('.piece')?.closest('[data-square]') as HTMLElement)
+      .dataset.square as string;
+    const wrong = ['a1', 'h8', 'd4', 'e5'].find((sq) => !targets.includes(sq) && sq !== origin) as string;
 
-    const feedback = await screen.findByTestId('feedback');
-    expect(feedback.textContent).toContain('Missed:');
-    expect(feedback.textContent).toContain('Wrongly selected: none');
+    await user.click(screen.getByTestId(`square-${targets[0]}`));
+    await user.click(screen.getByTestId(`square-${wrong}`));
+
+    await waitFor(() =>
+      expect(screen.getByTestId(`square-${wrong}`).className).toContain('square--wrong'),
+    );
+    // The earlier correct pick survives the mistake.
+    expect(screen.getByTestId(`square-${targets[0]}`).className).toContain('square--correct');
+    expect(screen.queryByTestId('feedback')).not.toBeInTheDocument();
+  });
+
+  it('ignores a repeat tap on an already-selected square', async () => {
+    const user = userEvent.setup();
+    renderSession({ modeId: 'knight-vision', variantId: 'attack-squares' });
+
+    await screen.findByTestId('session-screen');
+    const targets = knightTargetsOnBoard();
+
+    await user.click(screen.getByTestId(`square-${targets[0]}`));
+    const countAfterFirst = screen.getByTestId('remaining-count').textContent;
+
+    await user.click(screen.getByTestId(`square-${targets[0]}`));
+
+    // No change, and crucially no red flash: a repeat tap is not a mistake.
+    expect(screen.getByTestId('remaining-count').textContent).toBe(countAfterFirst);
+    expect(screen.getByTestId(`square-${targets[0]}`).className).not.toContain('square--wrong');
   });
 });
 
 describe('square colour mode', () => {
-  it('accepts a light/dark answer from the large buttons', async () => {
+  it('advances immediately on a correct light/dark answer', async () => {
     const user = userEvent.setup();
-    renderSession({ modeId: 'square-color', variantId: 'coordinate' });
+    renderSession({
+      modeId: 'square-color',
+      variantId: 'coordinate',
+      limit: { kind: 'questions', count: 10 },
+    });
 
     await screen.findByTestId('session-screen');
     expect(screen.getByTestId('choice-light')).toBeInTheDocument();
     expect(screen.getByTestId('choice-dark')).toBeInTheDocument();
 
+    const first = currentPromptCoordinate();
+    // One of the two must be right; try light, then dark if it flashed.
     await user.click(screen.getByTestId('choice-light'));
-    expect(await screen.findByTestId('feedback')).toBeInTheDocument();
+    if (currentPromptCoordinate() === first) {
+      await user.click(screen.getByTestId('choice-dark'));
+    }
+
+    await waitFor(() => expect(currentPromptCoordinate()).not.toBe(first));
+    expect(screen.queryByTestId('feedback')).not.toBeInTheDocument();
+  });
+
+  it('flashes the button red on a wrong colour and keeps the question', async () => {
+    const user = userEvent.setup();
+    renderSession({ modeId: 'square-color', variantId: 'coordinate' });
+
+    await screen.findByTestId('session-screen');
+    const first = currentPromptCoordinate();
+
+    await user.click(screen.getByTestId('choice-light'));
+    if (currentPromptCoordinate() !== first) return; // light happened to be right
+
+    await waitFor(() =>
+      expect(screen.getByTestId('choice-light').className).toContain('answer-button--wrong'),
+    );
+    expect(currentPromptCoordinate()).toBe(first);
   });
 });
 
@@ -269,27 +425,33 @@ describe('session controls', () => {
 
     await screen.findByTestId('session-screen');
     await user.click(screen.getByTestId('choice-light'));
-    await user.click(screen.getByTestId('next-question'));
     await user.click(screen.getByTestId('end-session'));
 
     const summary = await screen.findByTestId('session-summary');
     expect(within(summary).getByText(/ended early/i)).toBeInTheDocument();
   });
 
-  it('shows a summary when the question limit is reached', async () => {
+  it('shows the summary only when the session actually ends', async () => {
     const user = userEvent.setup();
     renderSession({
-      modeId: 'square-color',
-      variantId: 'coordinate',
-      limit: { kind: 'questions', count: 2 },
+      modeId: 'coordinate-to-square',
+      variantId: 'standard',
+      limit: { kind: 'questions', count: 3 },
       retry: 'none',
     });
 
     await screen.findByTestId('session-screen');
-    for (let i = 0; i < 2; i += 1) {
-      await user.click(screen.getByTestId('choice-light'));
-      const next = screen.queryByTestId('next-question');
-      if (next !== null) await user.click(next);
+
+    // Answer until the session ends on its own. The summary must never appear
+    // before that, and no per-question result panel ever appears.
+    for (let guard = 0; guard < 10; guard += 1) {
+      if (screen.queryByTestId('session-screen') === null) break;
+      expect(screen.queryByTestId('session-summary')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('feedback')).not.toBeInTheDocument();
+
+      const coordinate = screen.queryByTestId('prompt-coordinate')?.textContent?.trim() ?? '';
+      if (coordinate === '') break;
+      await user.click(screen.getByTestId(`square-${coordinate}`));
     }
 
     expect(await screen.findByTestId('session-summary')).toBeInTheDocument();
@@ -312,8 +474,11 @@ describe('session controls', () => {
         vi.advanceTimersByTime(4000);
       });
 
-      await vi.waitFor(() => expect(screen.getByTestId('feedback')).toBeInTheDocument());
-      expect(screen.getByTestId('feedback').className).toContain('feedback--wrong');
+      // A timeout must move the session on rather than stalling on a
+      // blocking result panel.
+      await vi.waitFor(() => expect(screen.queryByTestId('question-timer')).toBeInTheDocument());
+      expect(screen.queryByTestId('feedback')).not.toBeInTheDocument();
+      expect(screen.getByTestId('session-screen')).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }

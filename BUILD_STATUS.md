@@ -48,9 +48,8 @@ Node 20 or newer.
 | --- | --- |
 | Path | `release/Bight.apk` |
 | Variant | debug (debug-signed) |
-| Size | **54.38 MB** (57,024,833 bytes) |
-| SHA-256 | `2be5748f577363d43cb817a75e8baa60b9310f2a8e2d2ea1e5d2171bf0f904cd` |
-| Final commit | `516dc8fbd11cc4de59498680b3723738000f61f4` |
+| Size | **54.36 MB** (57,000,864 bytes) |
+| SHA-256 | `d57ac2565ee8b436a5096fd3fb8e72228f84be2a1f66b2fe5604986312a4ee4c` |
 | Gradle result | `BUILD SUCCESSFUL` — 267 actionable tasks |
 
 **Verified APK contents** (read back out of the built archive, not assumed):
@@ -125,6 +124,7 @@ Runs ESLint (0 warnings tolerated), `tsc --noEmit`, and the full Vitest suite.
 | D — Other piece vision and movement | Complete |
 | E — Movable pieces | Complete (drag wired, gesture untested — see audit) |
 | F — Session controls | Complete |
+| Continuous practice flow (no Next/Submit, auto-advance) | Complete |
 | G — Progress, mastery, adaptive practice | Complete |
 | H — Restrained gamification | Complete |
 | I — Offline voice input | Implemented; audio path unverified — see audit |
@@ -141,7 +141,7 @@ These are stated plainly rather than buried:
 2. **No emulator or device testing.** No Android emulator, no system image,
    and no device connected over ADB. The APK builds and is installable, but
    **it has never been launched**. Layout was verified in a real browser at
-   412×915 and 360×640; behaviour was verified by 436 automated tests.
+   412×915 and 360×640; behaviour was verified by 501 automated tests.
 
 3. **Voice audio path unverified.** Grammar and parsing have 29 passing tests
    and the model is packaged, but Vosk WASM loading, microphone capture and

@@ -40,6 +40,28 @@ coordinate walks you follow in your head.
 
 **Moving pieces** — drag or tap-then-tap a piece to a named square.
 
+### How practice flows
+
+Practice is continuous. There is no Next button, no Submit button, and no
+result screen between questions:
+
+- **Correct** → the next question appears immediately. Nothing to press.
+- **Wrong** → the square or button you chose flashes red and the *same*
+  question stays up. The answer is never revealed; you just try again.
+- **Multi-square questions** (knight vision and the like) complete themselves.
+  Each correct square stays lit, and the moment the set is complete the next
+  question loads. Tapping a square you already got right is ignored, not
+  punished.
+
+Every attempt is recorded either way, so a question you got wrong twice before
+getting right counts as two mistakes in your statistics — the accuracy figures
+reflect what actually happened, not just the final answer.
+
+Input is locked for 180ms when a question is replaced, so a double tap can
+never accidentally answer the question that follows.
+
+A summary appears only when the session ends, is paused, or you exit.
+
 ### Geometry vs legal moves
 
 Bight keeps these strictly apart, because they are different questions with

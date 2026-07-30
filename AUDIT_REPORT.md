@@ -121,6 +121,36 @@ All nine variants are implemented in `src/core/training/generators/knight.ts`.
 | chess.js used for complete legal positions | Verified working | `legal.ts` is the only source of legal-move answers |
 | Tested generators for isolated vision exercises | Verified working | `geometry.ts`, cross-checked against chess.js |
 
+## Continuous practice flow
+
+Added after the first release. Every manual progression control was removed and
+replaced with automatic advancement.
+
+| Requirement | Status | Evidence |
+| --- | --- | --- |
+| Correct answer advances automatically | Verified working | `engine.test.ts` "replaces the question with no intermediate phase"; confirmed live in a browser (g1 → g5 with no press) |
+| No Next / Continue / Submit anywhere | Verified working | An integration test asserts the absence of all three across **every registered mode and variant**, by test id and by accessible name |
+| No blocking Correct/Incorrect screen | Verified working | Same parameterised test asserts no feedback element exists; the `feedback` phase was deleted from the state machine entirely |
+| Brief non-blocking feedback only | Verified working | 420ms red flash on the wrong input; correct answers get a sound/haptic tick only |
+| Wrong answer flashes red | Verified working | `square--wrong` observed live during the flash and gone after |
+| Wrong answer keeps the question active | Verified working | "does not advance, does not reveal, and records the miss" |
+| Answer never auto-revealed | Verified working | `missed` is left empty on a wrong answer; a live check confirmed the correct square stays unmarked |
+| No button press needed to retry | Verified working | "lets the same question be answered correctly afterwards" |
+| Wrong attempts recorded even if later correct | Verified working | "records every wrong attempt, not just the first"; accuracy test proves a recovered miss still costs accuracy |
+| Multi-square: no Submit | Verified working | Control removed; asserted absent for every variant |
+| Multi-square: correct squares stay selected | Verified working | Live: six squares held green while the counter ran 6 → 1 |
+| Multi-square: completes on the last square | Verified working | "advances the moment the set is complete, with no submit step" |
+| Multi-square: wrong tap preserves progress | Verified working | Live: five selections survived a wrong tap on h8 |
+| Repeat tap not counted as wrong | Verified working | "ignores a repeat tap on an already-credited square" returns the identical state object |
+| Double-tap safety | Verified working | 180ms input lock; "ignores a second tap immediately after advancing" |
+| Summary only at end/pause/exit | Verified working | "shows the summary only when the session actually ends" |
+
+**Timeouts are the one exception** to "wrong answers keep the question": an
+expired per-question timer records the miss and moves on, because leaving the
+question open would stall the session behind a timer that has already fired.
+A timed-out multi-square question does record which squares were missed, since
+that is a genuine miss rather than a wrong tap.
+
 ## F. Session controls
 
 Every item below is covered by `engine.test.ts` (36 tests).

@@ -263,30 +263,21 @@ export function SessionSetup({ mode, variant, initial, onStart, onBack }: Sessio
 
           <div className="card">
             <label className="field">
-              <span className="field__label">Feedback</span>
-              <select
-                className="field__control"
-                value={settings.feedback}
-                onChange={(event) => patch({ feedback: event.target.value as SessionSettings['feedback'] })}
-              >
-                <option value="immediate">After every question</option>
-                <option value="end-of-session">At the end only</option>
-              </select>
-            </label>
-
-            <label className="field">
               <span className="field__label">Mistakes</span>
               <select
                 className="field__control"
-                value={settings.retry}
+                data-testid="setting-retry"
+                value={settings.retry === 'none' ? 'none' : 'later'}
                 onChange={(event) => patch({ retry: event.target.value as SessionSettings['retry'] })}
               >
-                <option value="none">Move on</option>
-                <option value="immediate">Retry straight away</option>
-                <option value="later">Come back to it later</option>
-                <option value="both">Both</option>
+                <option value="none">Just keep going</option>
+                <option value="later">Ask it again later in the session</option>
               </select>
             </label>
+            <p className="card__subtitle" style={{ marginTop: -6, marginBottom: 'var(--gap)' }}>
+              A wrong answer always flashes red and lets you try the same question again straight
+              away. This only controls whether it also comes back later.
+            </p>
 
             <div className="toggle-row">
               <span>Adaptive practice</span>
