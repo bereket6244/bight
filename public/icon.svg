@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Bight">
+  <!--
+    The Bight mark: a green-and-cream board fragment with a sight line running
+    to a single highlighted square, and an eye aperture at the centre.
+    "Bight" means board sight, so the mark is a board being looked at.
+    Original artwork - no third-party chess assets are used anywhere in Bight.
+  -->
+  <defs>
+    <clipPath id="rounded">
+      <rect x="56" y="56" width="400" height="400" rx="88" />
+    </clipPath>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="#16181c" />
+
+  <g clip-path="url(#rounded)">
+    <rect x="56" y="56" width="400" height="400" fill="#ebecd0" />
+    <!-- Four-by-four board fragment. -->
+    <g fill="#779556">
+      <rect x="56" y="56" width="100" height="100" />
+      <rect x="256" y="56" width="100" height="100" />
+      <rect x="156" y="156" width="100" height="100" />
+      <rect x="356" y="156" width="100" height="100" />
+      <rect x="56" y="256" width="100" height="100" />
+      <rect x="256" y="256" width="100" height="100" />
+      <rect x="156" y="356" width="100" height="100" />
+      <rect x="356" y="356" width="100" height="100" />
+    </g>
+
+    <!-- The sight line: corner to the target square. -->
+    <path
+      d="M 86 426 L 306 206"
+      stroke="#16181c"
+      stroke-width="18"
+      stroke-linecap="round"
+      opacity="0.55"
+    />
+
+    <!-- The target square. -->
+    <rect
+      x="256"
+      y="156"
+      width="100"
+      height="100"
+      fill="none"
+      stroke="#f4c95d"
+      stroke-width="20"
+    />
+
+    <!-- Eye aperture at the target. -->
+    <g transform="translate(306 206)">
+      <path
+        d="M -46 0 C -26 -30, 26 -30, 46 0 C 26 30, -26 30, -46 0 Z"
+        fill="#ebecd0"
+        stroke="#16181c"
+        stroke-width="12"
+        stroke-linejoin="round"
+      />
+      <circle r="15" fill="#16181c" />
+    </g>
+  </g>
+</svg>

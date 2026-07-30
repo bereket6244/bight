@@ -11,12 +11,6 @@ import { squareColor } from '../chess/square';
 import type { SquareName } from '../chess/types';
 import type { ExpectedAnswer, Grade, Question, SubmittedAnswer } from './types';
 
-function setsEqual(a: readonly SquareName[], b: readonly SquareName[]): boolean {
-  if (a.length !== b.length) return false;
-  const setB = new Set(b);
-  return a.every((square) => setB.has(square));
-}
-
 function describeSquares(squares: readonly SquareName[]): string {
   if (squares.length === 0) return 'none';
   return sortSquares(squares).join(', ');

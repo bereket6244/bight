@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Bight launcher foreground: a board fragment with a sight line running to a
+    highlighted target square and an eye aperture. Original artwork.
+
+    Drawn on the standard 108dp adaptive-icon canvas. The safe zone is the
+    centre 66dp, so the artwork is inset accordingly and nothing important
+    reaches the masked edge.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Board fragment: cream base -->
+    <path
+        android:fillColor="#EBECD0"
+        android:pathData="M26,26 h56 v56 h-56 z" />
+
+    <!-- Green squares, 4x4 checker across the fragment -->
+    <path
+        android:fillColor="#779556"
+        android:pathData="M26,26 h14 v14 h-14 z
+                          M54,26 h14 v14 h-14 z
+                          M40,40 h14 v14 h-14 z
+                          M68,40 h14 v14 h-14 z
+                          M26,54 h14 v14 h-14 z
+                          M54,54 h14 v14 h-14 z
+                          M40,68 h14 v14 h-14 z
+                          M68,68 h14 v14 h-14 z" />
+
+    <!-- Sight line from the near corner to the target square -->
+    <path
+        android:strokeColor="#16181C"
+        android:strokeWidth="3.4"
+        android:strokeAlpha="0.55"
+        android:strokeLineCap="round"
+        android:pathData="M30,78 L61,47" />
+
+    <!-- Target square outline -->
+    <path
+        android:strokeColor="#F4C95D"
+        android:strokeWidth="3.6"
+        android:pathData="M54,40 h14 v14 h-14 z" />
+
+    <!-- Eye aperture centred on the target -->
+    <path
+        android:fillColor="#EBECD0"
+        android:strokeColor="#16181C"
+        android:strokeWidth="2.2"
+        android:strokeLineJoin="round"
+        android:pathData="M53,47 C56,42.6 66,42.6 69,47 C66,51.4 56,51.4 53,47 Z" />
+    <path
+        android:fillColor="#16181C"
+        android:pathData="M61,44.8 m-2.3,0 a2.3,2.3 0 1,0 4.6,0 a2.3,2.3 0 1,0 -4.6,0" />
+</vector>

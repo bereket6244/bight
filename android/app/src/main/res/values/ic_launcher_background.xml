@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Bight's surface colour, so the launcher icon sits on the same dark
+         ground as the app itself. -->
+    <color name="ic_launcher_background">#16181C</color>
+</resources>
