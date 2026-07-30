@@ -297,10 +297,21 @@ function buildAttempt(
   };
 }
 
-/** Whether the session should queue this question to be asked again later. */
+/**
+ * Whether the session should queue this question to be asked again later.
+ *
+ * Once the question limit is reached the queue is drained but never refilled.
+ * Without that, a miss on a queued retry would queue it again, and a
+ * "10 questions" session could run indefinitely — a 10-question session was
+ * observed reaching 40 before this check existed.
+ */
 function shouldQueueRetry(state: SessionState, question: Question): boolean {
   const policy = state.settings.retry;
   if (policy === 'none' || policy === 'immediate') return false;
+
+  const limit = state.settings.limit;
+  if (limit.kind === 'questions' && state.questionsCompleted >= limit.count) return false;
+
   return !state.retryQueue.some((queued) => queued.id === question.id);
 }
 

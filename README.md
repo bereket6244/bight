@@ -13,32 +13,65 @@ telemetry, no network calls of any kind after installation.
 
 ---
 
-## What it trains
+## What you can practice
 
-**Coordinates**
-- See a coordinate, tap the square — on an empty board or a full one, from
-  either side, with labels on or off.
-- See a highlighted square, name it on a two-tap keypad.
-- Memory variants: the coordinate or the highlight flashes and disappears.
-- A blindfold variant that hides the board entirely.
+Eleven modes in six groups. Variants that differ only by timing, orientation
+or prompt visibility are settings inside a mode, not separate cards.
 
-**Square colour** — light or dark, from the coordinate alone with no board, or
-from a flashed square.
+**Coordinates** — Find the square (see a coordinate, tap it), Name the square
+(see a highlight, name it on the two-tap keypad), Alignment (do two named
+squares share a rank, file or diagonal?).
 
-**Knight vision** — nine variants, because the knight is the piece people
-actually struggle to see: what it attacks, what it can legally reach with
-pieces in the way, what it sees from where it lands, what it attacks from a
-square with no knight shown, and shortest-route problems across the board.
+**Square color** — a coordinate is shown with no board, and you say light or
+dark. There is deliberately no board: seeing the square would answer it.
 
-**Other pieces** — bishops, rooks, queens, kings and pawns: attack squares,
-legal destinations through traffic, whole diagonals, files and ranks, the
-difference between a pawn push and a pawn capture, and which piece blocks each
-ray.
+**Knight vision** — what it attacks, where it can legally go, what it sees
+after landing, and the same from memory with no knight drawn. Plus Knight
+routes, with an optional "fewest moves" requirement.
 
-**Board relations** — whether two squares share a rank, file or diagonal, and
-coordinate walks you follow in your head.
+**Forks** — knight and queen. Two targets are named; find a square that
+attacks both. Every valid square is accepted, not one arbitrary answer.
 
-**Moving pieces** — drag or tap-then-tap a piece to a named square.
+**Notation** — read a move like Nbd2 and play it in a realistic position
+(10–26 pieces, both kings). The "Which knight?" exercise guarantees both
+knights are on the board, so you have to work out which one is meant.
+
+**Position vision** — sliding pieces in traffic, and which piece stops each
+ray. Empty-board target collection was removed: the board gave the answer away.
+
+### Prompt visibility and hidden boards
+
+Flashing a prompt is a setting, not a mode. On the coordinate modes you can
+choose whether the prompt stays up or flashes, and for how long; Name the
+square can hide the board entirely for visualization practice.
+
+### Home
+
+Home shows what you actually practice, derived from local session history:
+**Recent** (deduplicated, most recent first) and **You practice these most**
+(weighted so recent practice counts more, and short sessions do not count at
+all). Before there is enough history it shows a plainly-labelled **Start here**
+list rather than pretending a fixed list is personalized.
+
+### Session setup
+
+The controls people change often are visible above Start: orientation, labels,
+session length and its value, per-question time, prompt visibility, board
+layout, and voice where the mode supports it. Weak-square filters, adaptive
+weighting and retry scheduling live under **More settings**.
+
+### Sound, spoken prompts and voice answers
+
+Three separate things, with separate controls:
+
+| | What it does | Microphone? |
+| --- | --- | --- |
+| Sound effects | Short tones for right and wrong | No |
+| Spoken prompts | Reads coordinates aloud via the system voice | No |
+| Voice answers | On-device recognition of your spoken answer | Yes, requested only when you turn it on |
+
+Settings shows whether voice answers are available and why not if they are not.
+Touch and keypad input always keep working.
 
 ### How practice flows
 

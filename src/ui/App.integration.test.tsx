@@ -36,6 +36,12 @@ function currentPromptCoordinate(): string {
   return screen.getByTestId('prompt-coordinate').textContent?.trim() ?? '';
 }
 
+/** "3 / 10" from the session bar - a deterministic progress signal. */
+function sessionProgressText(): string {
+  const metas = document.querySelectorAll('.session-bar__meta');
+  return (metas[metas.length - 1] as HTMLElement | undefined)?.textContent?.trim() ?? '';
+}
+
 function renderSession(overrides: Partial<SessionSettings> = {}) {
   const settings: SessionSettings = {
     ...defaultSettings('square-color', 'coordinate'),
@@ -172,8 +178,12 @@ describe('answering a coordinate question', () => {
     expect(screen.getByTestId(`key-rank-${first[1]}`)).toBeEnabled();
     await user.click(screen.getByTestId(`key-rank-${first[1]}`));
 
-    // A new question is already on screen; nothing was pressed to get here.
-    await waitFor(() => expect(currentPromptSquare()).not.toBe(first));
+    /*
+     * Progress, not the prompt square, is what proves the question advanced.
+     * The next question can legitimately pick the same square, which made an
+     * "it changed" assertion fail roughly one run in sixty-four.
+     */
+    await waitFor(() => expect(sessionProgressText()).toBe('1 / 10'));
     expect(screen.queryByTestId('feedback')).not.toBeInTheDocument();
   });
 

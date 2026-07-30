@@ -633,6 +633,55 @@ describe('retry queue', () => {
     expect(state.retryQueue).toHaveLength(1);
   });
 
+  /**
+   * Regression: a 10-question session was observed running to 40. Missing a
+   * queued retry re-queued it, so the queue refilled faster than it drained
+   * and the limit was never reached.
+   */
+  it('drains the retry queue at the limit without refilling it', () => {
+    let state = startSession(
+      settings({ limit: { kind: 'questions', count: 10 }, retry: 'later' }),
+      { seed: 5 },
+      T0,
+    );
+    let now = T0;
+
+    // Answer every question wrong once, then right - the pattern a real user
+    // produces and the one that exposed the bug.
+    for (let guard = 0; guard < 200; guard += 1) {
+      if (state.phase === 'finished') break;
+      now += 300;
+      state = submitAnswer(state, wrongAnswer(state), 'touch', {}, now);
+      now += 300;
+      state = submitAnswer(state, correctAnswer(state), 'touch', {}, now);
+    }
+
+    expect(state.phase).toBe('finished');
+    // Ten scored questions, plus at most the retries queued before the limit.
+    expect(state.questionsCompleted).toBeLessThanOrEqual(20);
+    expect(state.retryQueue).toEqual([]);
+  });
+
+  it('stops queueing once the question limit is reached', () => {
+    let state = startSession(
+      settings({ limit: { kind: 'questions', count: 2 }, retry: 'later' }),
+      { seed: 5 },
+      T0,
+    );
+    let now = T0;
+    for (let i = 0; i < 2; i += 1) {
+      now += 300;
+      state = submitAnswer(state, correctAnswer(state), 'touch', {}, now);
+    }
+    // The limit is met; a further miss must not extend the session.
+    const queuedBefore = state.retryQueue.length;
+    if (state.phase === 'question') {
+      now += 300;
+      state = submitAnswer(state, wrongAnswer(state), 'touch', {}, now);
+      expect(state.retryQueue.length).toBeLessThanOrEqual(queuedBefore);
+    }
+  });
+
   it('does not queue anything when retry is off', () => {
     let state = startSession(settings({ retry: 'none' }), { seed: 3 }, T0);
     state = submitAnswer(state, wrongAnswer(state), 'touch', {}, T0 + 500);

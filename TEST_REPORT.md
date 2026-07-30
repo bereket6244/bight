@@ -1,4 +1,132 @@
 # Bight test report
+---
+
+# Second pass test report
+
+## Commands run
+
+```bash
+npx eslint . --max-warnings 0
+```
+**Pass**, 0 errors, 0 warnings.
+
+```bash
+npx tsc --noEmit
+```
+**Pass**, 0 errors, with `strict`, `noUnusedLocals` and `noUnusedParameters`.
+
+```bash
+npx vitest run
+```
+**Pass** — 17 files, **555 tests passed, 0 failed, 0 skipped** (was 501).
+
+```bash
+npm run build && npx cap sync android && node scripts/build-apk.mjs
+```
+**Pass** — `BUILD SUCCESSFUL`, 267 actionable tasks.
+
+```bash
+node scripts/inspect-apk.mjs
+```
+**Pass** — read back out of the built archive, not assumed:
+
+| | |
+| --- | --- |
+| Size | 54.36 MB (57,002,115 bytes) |
+| SHA-256 | `cd296591b085d6022577d6c709698ab4998dcb2a0e6b481cde8e7fef57e8ceee` |
+| Entries | 521 |
+| Dex | `classes.dex` … `classes4.dex` |
+| Web bundle | `assets/public/index.html` present, 16 asset entries |
+| Voice model | `assets/public/models/vosk-model-small-en-us-0.15.tar` present |
+| Signature | `META-INF/CERT.SF`, `META-INF/CERT.RSA` (debug) |
+
+## New test files
+
+| File | Tests | Covers |
+| --- | ---: | --- |
+| `src/core/chess/fork.test.ts` | 27 | Fork squares for knight and queen, all-pairs cross-check against an independent intersection, blockers, occupancy, legal-vs-geometric fork moves, pins, problem-usefulness filter |
+| `src/core/chess/positionGenerator.test.ts` | 22 | Legal position generation, 10–26 piece density, both kings, side to move, check avoidance, two-knight requirement, SAN from chess.js, rival detection, disambiguation |
+| `src/core/training/secondPass.test.ts` | 20 | Mode registry shape, every removed exercise asserted absent, new modes present, legacy labels, and the spelling guard |
+| `src/core/progress/usage.test.ts` | 20 | Recency ordering, deduplication, frequency weighting and half-life, removed-mode filtering, fresh-install fallback |
+
+Plus 2 regression tests added to `engine.test.ts` for the retry-queue bug.
+
+## Real-browser layout verification
+
+jsdom has no layout engine, so the pinned-navigation requirement was verified
+by driving the running app in Chromium at phone viewports.
+
+### 360×640 (compact phone)
+
+| Check | Result |
+| --- | --- |
+| Bottom nav within viewport | Pass — occupies y 581–640, exactly the viewport bottom |
+| Document does not scroll | Pass — `body.scrollHeight` 640 = viewport height |
+| Content scrolls internally | Pass — `.app__main` 735 scroll / 581 client |
+| Nav pinned at 0%, 50%, 100% scroll | Pass — y 581–640 at every position |
+| Last element clears the nav | Pass — bottom 511 vs nav top 581 |
+| Horizontal overflow | None |
+
+### 360×640, Practice tab (long page)
+
+| Check | Result |
+| --- | --- |
+| Content height | 1121px, nearly 2× the viewport |
+| Categories rendered | Coordinates, Square color, Knight vision, Forks, Notation and piece selection, Position vision |
+| Mode cards | 11 |
+| Nav still pinned after scrolling to the end | Pass |
+| Last card clears the nav | Pass |
+| Horizontal overflow | None |
+
+### 412×915
+
+| Check | Result |
+| --- | --- |
+| Setup shows common controls above Start | Pass — Exercise, Orientation, Coordinate labels, Session length, How many, Time per question |
+| Advanced settings hidden by default | Pass |
+| Bottom nav absent during a session | Pass — sessions use a focused shell; Pause and End remain |
+| Horizontal overflow | None |
+
+## Feature verification in the browser
+
+| Check | Result |
+| --- | --- |
+| Knight fork question | "Tap the square where a knight forks e6 and e4", detail "2 squares work - any one counts" |
+| Multiple fork solutions accepted | Pass — tapped `g5`, advanced with no red flash, proving the non-listed solution is accepted |
+| Notation position realism | "Play Nxf6" with **26 pieces** on the board and detail "Both knights are on the board" |
+| Home before history | "Start here" section only; no Recent or Frequent, no fake personalization |
+| Home after a real session | "Recent" (5 deduplicated entries) and "You practice these most" (1 session); "Start here" gone |
+| Session ends at its limit | Pass after fix — 10-question session finished in 14 iterations (10 + drained retries) |
+
+## Bug found in the browser, missed by the suite
+
+A 10-question session was observed running to **40 / 10** and still going. A
+miss on a *queued retry* re-queued the question, so the retry queue refilled
+faster than it drained. The automated tests answered correctly too often to
+reach the condition. Fixed by refusing to queue new retries once the question
+limit is reached; two regression tests added.
+
+## Flaky test fixed
+
+`advances immediately on a correct keypad answer` waited for the prompt square
+to *change*, which fails roughly 1 run in 64 when the next question picks the
+same square. It now asserts on the session progress counter instead.
+Confirmed with three consecutive clean runs of the integration suite.
+
+## Not verified — hardware only
+
+- App launch on an Android device or emulator (none available).
+- Vosk WASM load, microphone capture, recognition accuracy.
+- SQLite repository (requires a native platform).
+- Android 15 edge-to-edge, gesture navigation, and keyboard-resize interaction
+  with the `100dvh` shell and safe-area insets.
+- Drag-and-drop gestures (jsdom has no drag data transfer).
+- Backup file picker through the Android Storage Access Framework.
+
+
+---
+
+# First pass test report (v1.0.0)
 
 All figures below come from runs on this machine. Nothing is estimated.
 

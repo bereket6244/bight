@@ -7,9 +7,9 @@
 | | |
 | --- | --- |
 | Location | `C:\Users\Bereket\Desktop\bight` |
-| Branch | `main` |
+| Branch | `second-pass` |
 | Remote | `https://github.com/bereket6244/bight` (private) |
-| Commits | 7 |
+| Commits | 10 |
 
 ## Application
 
@@ -48,8 +48,8 @@ Node 20 or newer.
 | --- | --- |
 | Path | `release/Bight.apk` |
 | Variant | debug (debug-signed) |
-| Size | **54.36 MB** (57,000,864 bytes) |
-| SHA-256 | `d57ac2565ee8b436a5096fd3fb8e72228f84be2a1f66b2fe5604986312a4ee4c` |
+| Size | **54.36 MB** (57,002,115 bytes) |
+| SHA-256 | `cd296591b085d6022577d6c709698ab4998dcb2a0e6b481cde8e7fef57e8ceee` |
 | Gradle result | `BUILD SUCCESSFUL` — 267 actionable tasks |
 
 **Verified APK contents** (read back out of the built archive, not assumed):
@@ -118,13 +118,18 @@ Runs ESLint (0 warnings tolerated), `tsc --noEmit`, and the full Vitest suite.
 
 | Group | State |
 | --- | --- |
-| A — Coordinate recognition, both directions plus memory variants | Complete |
-| B — Square-colour training | Complete |
-| C — Knight vision, nine variants | Complete |
-| D — Other piece vision and movement | Complete |
+| A — Coordinate recognition, both directions | Complete (flash is now a setting) |
+| B — Square-color training | Complete (board-revealing variants removed) |
+| C — Knight vision | Complete (4 variants + separate Knight routes mode) |
+| D — Other piece vision | Complete (sliders in traffic; empty-board collection removed) |
 | E — Movable pieces | Complete (drag wired, gesture untested — see audit) |
 | F — Session controls | Complete |
 | Continuous practice flow (no Next/Submit, auto-advance) | Complete |
+| Forks — knight and queen | Complete (new in second pass) |
+| Notation and piece selection | Complete (new in second pass) |
+| Pinned bottom navigation and app shell | Complete (browser-verified) |
+| Home Recent / Frequently used | Complete |
+| Separated sound, spoken prompts, voice answers | Complete |
 | G — Progress, mastery, adaptive practice | Complete |
 | H — Restrained gamification | Complete |
 | I — Offline voice input | Implemented; audio path unverified — see audit |
@@ -137,7 +142,7 @@ These are stated plainly rather than buried:
 1. **No emulator or device testing.** No Android emulator, no system image,
    and no device connected over ADB. The APK builds and is installable, but
    **it has never been launched**. Layout was verified in a real browser at
-   412×915 and 360×640; behaviour was verified by 501 automated tests.
+   412×915 and 360×640; behaviour was verified by 555 automated tests.
 
 2. **Voice audio path unverified.** Grammar and parsing have 29 passing tests
    and the model is packaged, but Vosk WASM loading, microphone capture and
@@ -186,9 +191,10 @@ would have reported itself unavailable despite the model shipping correctly.
 
 ## Push
 
-**Pushed.** `main` tracks `origin/main` at
-<https://github.com/bereket6244/bight> — 7 commits, including
-`release/Bight.apk`.
+**Pushed.** The second pass is on the `second-pass` branch at
+<https://github.com/bereket6244/bight>, including a rebuilt
+`release/Bight.apk`. `main` still holds the first release, so the two can be
+compared before merging.
 
 The repository is **private**. To publish it:
 

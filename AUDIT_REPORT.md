@@ -15,6 +15,125 @@ rather than being described as done.
 
 ---
 
+# Second pass: training-value audit and redesign
+
+The first release shipped 11 modes exposing **42 variant cards**. Several
+existed because a generator could produce them, not because they were worth
+repeating. This pass judged each one against a single question: *does a serious
+user gain something by doing this again tomorrow?*
+
+Result: **11 modes in 6 categories**, with variants demoted to settings.
+
+## Disposition of every mode and variant from v1.0.0
+
+| Mode / variant | Decision | Reason |
+| --- | --- | --- |
+| `coordinate-to-square` standard | **Keep** | The core skill. Renamed "Find the square". |
+| `coordinate-to-square` weak-squares | **Merge** | Was a variant of the same task; weak-square focus is now a setting under More. |
+| `square-to-coordinate` standard | **Keep** | The reverse direction. Renamed "Name the square". |
+| `square-to-coordinate` weak-squares | **Merge** | As above. |
+| `memory-coordinate-to-square` (all) | **Remove from registry** | A whole mode card for "the same task, shown briefly". Now the *Prompt: flashes* setting. |
+| `memory-square-to-coordinate` standard | **Remove from registry** | As above. |
+| `memory-square-to-coordinate` blindfold | **Merge** | Now the *Board: hidden* setting on Name the square. |
+| `square-color` coordinate | **Keep** | The only version that trains anything. Now the whole mode. |
+| `square-color` highlighted | **Remove** | Showed the square on a green-and-cream board, then asked its colour. The board answered the question. |
+| `square-color` flashed | **Remove** | Same defect, briefly. |
+| `knight-vision` attack-squares | **Keep** | A knight's attack set is genuinely not obvious — this is why empty-board collection survives for knights and not for rooks. |
+| `knight-vision` legal-destinations | **Keep** | Occupancy changes the answer. |
+| `knight-vision` from-destination | **Keep** | Real visualization: what it sees after landing. |
+| `knight-vision` from-memory | **Keep** | Hardest and most valuable variant. |
+| `knight-vision` geometry-with-pieces | **Merge** | "Ignore the pieces" is the same answer as attack-squares with visual noise. |
+| `knight-vision` candidates | **Remove** | "Which of these marked squares are attacked" is attack-squares with distractors. |
+| `knight-vision` move-to-target | **Replace** | Superseded by Notation, which asks the same thing in a real position. |
+| `knight-vision` shortest-route / any-route | **Move** | A different skill sharing a card. Now the **Knight routes** mode with a "fewest moves" setting. |
+| `piece-vision` bishop/rook/queen-geometry | **Remove** | Tap every square a slider sees on an empty board. Tedious, visually obvious, low value. |
+| `piece-vision` king-geometry | **Remove** | Eight adjacent squares, all visible. Trivial. |
+| `piece-vision` pawn-geometry | **Remove** | As above. |
+| `piece-vision` diagonal | **Remove** | "Name the diagonal" is bishop-geometry in other words. |
+| `piece-vision` file-and-rank | **Remove** | Rook-geometry in other words. |
+| `piece-vision` pawn-moves-vs-captures | **Remove** | A repetitive board-vision card for something that appears naturally in Notation. |
+| `piece-vision` bishop/rook/queen-blocked | **Keep** | Occupancy decides the answer; the board does not give it away. This is the useful half of slider vision. |
+| `piece-movement` (5 variants) | **Replace** | One piece on an empty board — no selection skill. Replaced by **Notation**. |
+| `alignment` standard | **Keep, changed** | Was drawn on a board with both squares highlighted, which answered it visually. Now coordinate-only with no board. |
+| `blockers` rook/bishop/queen | **Keep** | Explicitly useful: which piece stops each ray. |
+| `sequence` standard/long/blindfold | **Remove** | "Go up, go left, where are you?" is not how chess coordinates are used, and screen-relative direction is actively wrong under Black orientation. |
+
+Underlying geometry for every removed drill is untouched in `src/core/chess`
+and still exhaustively tested. Only the user-facing cards were removed.
+
+## Modes added
+
+| Mode | What it trains |
+| --- | --- |
+| **Knight forks** | One square attacking two named targets. Every valid square accepted. |
+| **Queen forks** | The same on the queen's lines, where blockers matter. |
+| **Notation** | Read SAN, play it in a realistic position. Includes "Which knight?" and SAN disambiguation. |
+| **Knight routes** | Split out of knight vision; "fewest moves" is a setting. |
+
+## Every issue raised in the second-pass brief
+
+| # | Requirement | Result |
+| --- | --- | --- |
+| 1 | Preserve name, offline, themes, green board, orientations, labels, progress, backup, continuous flow, input lock, chess.js validation, failure isolation | **Verified** — all preserved; 555 tests pass, up from 501 |
+| 3 | Complete training-value audit | **Verified** — table above; a test asserts every registered mode has a category and one-line summary |
+| 4A | Remove board-revealing square-colour variants | **Verified** — mode has exactly one variant; a test asserts the others are absent |
+| 4B | Remove empty-board slider collection | **Verified** — asserted absent by id |
+| 4C | Remove pawn push/capture drill | **Verified** — asserted absent |
+| 4D | Remove directional coordinate walk | **Verified** — mode removed entirely |
+| 4E | Flash as a setting, not a mode | **Verified** — `promptVisibility` setting; both flash modes removed |
+| 5 | Knight and queen fork training | **Verified** — 27 fork tests including an exhaustive all-pairs cross-check; multiple solutions accepted, confirmed live in a browser |
+| 6 | Realistic notation positions | **Verified** — positions from generated legal play, 10–26 pieces, SAN from chess.js; observed live with 26 pieces and both knights |
+| 7 | Home Recent + Frequent | **Verified** — 20 usage tests; observed live populating after a real session and falling back to "Start here" before one |
+| 8 | Major UI simplification | **Verified** — mode cards limited to a 60-character summary by test; descriptions moved behind an info button |
+| 9 | Common controls on setup | **Verified** — orientation, labels, length, count/duration, per-question time, prompt, board, voice all visible; advanced under "More settings" |
+| 10 | Pinned bottom navigation | **Verified in a real browser** — see TEST_REPORT |
+| 11 | Mobile usability audit | **Partly verified** — layout, overflow, focus states and touch targets verified in-browser; hardware-only items listed below |
+| 12 | practise → practice | **Verified** — swept, and a test fails the build if it returns |
+| 13 | Separate sound / spoken prompts / voice answers | **Verified** — three independent controls; microphone requested only by the voice toggle |
+| 14 | Mode-browser architecture | **Verified** — 6 categories, one card per mode |
+| 15 | Data and migration consequences | **Verified** — legacy id layer; removed modes never launch from Home; old backups import |
+| 16 | Testing requirements | **Verified** — 555 tests |
+| 19 | Build, APK, commit, push | **Verified** — see BUILD_STATUS |
+
+## Bug found by browser testing that the test suite missed
+
+A 10-question session could run past 40 questions. Missing a *queued retry*
+re-queued it, so the retry queue refilled faster than it drained and the limit
+was never reached. The automated tests answered correctly too often to trigger
+it; driving the real app with a deliberately wrong-then-right pattern exposed
+it immediately.
+
+Fixed by refusing to queue new retries once the question limit is reached — the
+queue drains but never refills. Two regression tests now pin this.
+
+A second regression was caught during the pass: the session engine passed
+`revealMs` unconditionally, which would have made every prompt flash away after
+a second by default.
+
+## Still not verified on hardware
+
+Unchanged and stated plainly:
+
+- **No emulator, no device.** The APK builds and is installable but **has never
+  been launched**. Everything visual was verified in a desktop Chromium at
+  phone viewports, which has a real layout engine but is not Android.
+- **Voice audio path.** Grammar and parsing have 29 passing tests and the model
+  is packaged in the APK, but Vosk WASM loading, microphone capture and
+  recognition accuracy have never been executed. The Settings screen reports
+  this honestly rather than showing a checkbox that silently does nothing.
+- **SQLite.** Implemented against the same contract IndexedDB passes, but it
+  requires a native platform to run.
+- **Android system-bar behaviour.** `100dvh` and `env(safe-area-inset-*)` are
+  in place and verified in a browser; their interaction with Android 15
+  edge-to-edge, gesture navigation and the on-screen keyboard is unverified.
+- **Drag gestures.** jsdom has no drag data transfer; tap-to-move is fully
+  tested and is the primary path on a phone.
+
+
+---
+
+# First pass audit (v1.0.0)
+
 ## Environment: what the brief assumed vs what was there
 
 The brief opened by stating the machine was "already connected to a Git
