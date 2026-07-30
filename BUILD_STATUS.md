@@ -9,7 +9,7 @@
 | Location | `C:\Users\Bereket\Desktop\bight` |
 | Branch | `main` |
 | Remote | **none configured** — see "Push" below |
-| Final commit | _filled in at the release commit_ |
+| Commits | 5, one per milestone |
 
 ## Application
 
@@ -48,8 +48,9 @@ Node 20 or newer.
 | --- | --- |
 | Path | `release/Bight.apk` |
 | Variant | debug (debug-signed) |
-| Size | **54.38 MB** (57,020,847 bytes) |
+| Size | **54.38 MB** (57,024,833 bytes) |
 | SHA-256 | `2be5748f577363d43cb817a75e8baa60b9310f2a8e2d2ea1e5d2171bf0f904cd` |
+| Final commit | `516dc8fbd11cc4de59498680b3723738000f61f4` |
 | Gradle result | `BUILD SUCCESSFUL` — 267 actionable tasks |
 
 **Verified APK contents** (read back out of the built archive, not assumed):
