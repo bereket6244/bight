@@ -225,8 +225,13 @@ export interface GeneratorContext {
    * more". Absent squares default to 1.
    */
   weights?: ReadonlyMap<SquareName, number>;
-  /** Milliseconds a flashed prompt stays visible, for memory variants. */
+  /**
+   * Milliseconds a flashed prompt stays visible. Undefined means the prompt
+   * stays up for the whole question.
+   */
   revealMs?: number;
+  /** Hide the board for visualization practice. */
+  hideBoard?: boolean;
   /** Show destination hints. */
   showHints?: boolean;
 }

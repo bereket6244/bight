@@ -25,6 +25,19 @@ export type QuestionTimer =
 /** When the user finds out whether they were right. */
 export type FeedbackMode = 'immediate' | 'end-of-session';
 
+/**
+ * How long the prompt stays on screen.
+ *
+ * This replaces the old "flash coordinate" and "flash square" modes, which
+ * were separate cards for what is really one setting on the ordinary
+ * coordinate exercises.
+ */
+export type PromptVisibility =
+  /** Stays visible for the whole question. */
+  | 'persistent'
+  /** Shown briefly, then hidden. Duration comes from `revealMs`. */
+  | 'flash';
+
 /** What happens to a question the user gets wrong. */
 export type RetryPolicy = 'none' | 'immediate' | 'later' | 'both';
 
@@ -39,8 +52,15 @@ export interface SessionSettings {
   labels: LabelMode;
   layout: PieceLayout;
   filters: SquareFilters;
-  /** Milliseconds a flashed prompt stays visible in memory variants. */
+  /** Whether the prompt stays up or flashes briefly. */
+  promptVisibility: PromptVisibility;
+  /** Milliseconds a flashed prompt stays visible. Only used when flashing. */
   revealMs: number;
+  /**
+   * Hide the board entirely for visualization practice. Only offered by modes
+   * where answering without a board is meaningful.
+   */
+  hideBoard: boolean;
   /** Show legal/geometric destination markers. */
   showHints: boolean;
   /**
@@ -84,7 +104,9 @@ export function defaultSettings(modeId: ModeId, variantId: string): SessionSetti
     labels: 'always',
     layout: 'empty',
     filters: emptyFilters(),
+    promptVisibility: 'persistent',
     revealMs: 1200,
+    hideBoard: false,
     showHints: false,
     accuracyFirst: true,
     sound: true,
@@ -129,7 +151,9 @@ export function validateSettings(settings: SessionSettings): SessionSettings {
     ...settings,
     limit,
     questionTimer,
+    promptVisibility: settings.promptVisibility === 'flash' ? 'flash' : 'persistent',
     revealMs: clamp(settings.revealMs, MIN_REVEAL_MS, MAX_REVEAL_MS),
+    hideBoard: Boolean(settings.hideBoard),
     feedback: settings.feedback === 'end-of-session' ? 'end-of-session' : 'immediate',
     retry: (['none', 'immediate', 'later', 'both'] as RetryPolicy[]).includes(settings.retry)
       ? settings.retry
