@@ -78,7 +78,10 @@ async function main() {
   run('npm', ['run', 'build']);
   run('npx', ['cap', 'sync', 'android']);
 
-  const gradlew = process.platform === 'win32' ? 'gradlew.bat' : './gradlew';
+  // An absolute path: `gradlew.bat` alone is not resolvable from cmd even with
+  // cwd set to the android directory, because "." is not on PATH on Windows.
+  const gradlew =
+    process.platform === 'win32' ? path.join(androidDir, 'gradlew.bat') : './gradlew';
   run(gradlew, [gradleTask, '--no-daemon'], {
     cwd: androidDir,
     env: { JAVA_HOME: javaHome },

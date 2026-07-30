@@ -20,8 +20,26 @@ export type VoiceAvailability =
   | { state: 'unavailable'; reason: string }
   | { state: 'denied'; reason: string };
 
-/** Where the fetch script puts the model, relative to the app root. */
-export const MODEL_PATH = 'models/vosk-model-small-en-us-0.15.tar.gz';
+/**
+ * Candidate model paths, tried in order.
+ *
+ * Two names are needed because Android's asset packager rewrites the file.
+ * `.tar.gz` is what `fetch-voice-model.mjs` downloads and what a browser
+ * serves, but AAPT gunzips `.gz` assets when building the APK — APK entries
+ * are deflate-compressed already, so it avoids compressing twice — and stores
+ * the result as plain `.tar`. Probing both means the same code works in the
+ * dev server and on device.
+ *
+ * This was found by inspecting the built APK: the entry really is
+ * `assets/public/models/vosk-model-small-en-us-0.15.tar`.
+ */
+export const MODEL_PATHS = [
+  'models/vosk-model-small-en-us-0.15.tar.gz',
+  'models/vosk-model-small-en-us-0.15.tar',
+] as const;
+
+/** The path that answered a HEAD request, once one has. */
+let resolvedModelPath: string | null = null;
 
 export interface RecognizerOptions extends ParseOptions {
   /** Restricts recognition to the words this exercise can accept. */
@@ -57,15 +75,22 @@ export async function checkVoiceAvailability(): Promise<VoiceAvailability> {
     return { state: 'unavailable', reason: cachedFailure };
   }
 
-  try {
-    // Probe for the model file without downloading all of it.
-    const response = await fetch(MODEL_PATH, { method: 'HEAD' });
-    if (!response.ok) {
-      const reason = 'The offline voice model is not bundled in this build.';
-      cachedFailure = reason;
-      return { state: 'unavailable', reason };
+  // Probe for the model without downloading all of it.
+  if (resolvedModelPath === null) {
+    for (const candidate of MODEL_PATHS) {
+      try {
+        const response = await fetch(candidate, { method: 'HEAD' });
+        if (response.ok) {
+          resolvedModelPath = candidate;
+          break;
+        }
+      } catch {
+        // Try the next candidate.
+      }
     }
-  } catch {
+  }
+
+  if (resolvedModelPath === null) {
     const reason = 'The offline voice model is not bundled in this build.';
     cachedFailure = reason;
     return { state: 'unavailable', reason };
@@ -84,10 +109,18 @@ export async function checkVoiceAvailability(): Promise<VoiceAvailability> {
 
 async function loadModel(): Promise<VoskModel> {
   if (cachedModel !== null) return cachedModel;
+  if (resolvedModelPath === null) {
+    // checkVoiceAvailability() normally resolves this; do it here too so
+    // startListening() is safe to call on its own.
+    const availability = await checkVoiceAvailability();
+    if (availability.state !== 'ready' || resolvedModelPath === null) {
+      throw new Error('No voice model is available in this build');
+    }
+  }
   const vosk = (await import('vosk-browser')) as unknown as {
     createModel: (path: string) => Promise<VoskModel>;
   };
-  cachedModel = await vosk.createModel(MODEL_PATH);
+  cachedModel = await vosk.createModel(resolvedModelPath);
   return cachedModel;
 }
 
@@ -169,4 +202,5 @@ export function resetVoiceCache(): void {
   cachedModel?.terminate?.();
   cachedModel = null;
   cachedFailure = null;
+  resolvedModelPath = null;
 }
