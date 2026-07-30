@@ -1,28 +1,74 @@
 /**
  * Session setup.
  *
- * Every control has a sensible default already applied, so "Start" is always
- * one tap away; the options are there for people who want them, not a form to
- * be filled in before practising.
+ * The controls people change often — orientation, labels, how long, prompt
+ * visibility, voice — are visible above the Start button as segmented
+ * controls. The rare ones (adaptive weighting, file/rank filters, retry
+ * scheduling) sit under "More settings".
+ *
+ * Every segment carries a text label. Nothing here depends on interpreting a
+ * bare icon.
  */
 
 import { useState } from 'react';
 import { FILE_LETTERS } from '../../core/chess/types';
 import { QUADRANT_LABELS, QUADRANTS } from '../../core/chess/square';
 import { validateSettings, type SessionSettings } from '../../core/session/settings';
-import type { ModeDefinition, ModeVariant } from '../../core/training/types';
+import type { ModeDefinition } from '../../core/training/types';
+import { useVoiceAvailability, voiceShortStatus } from '../../services/voice/useVoice';
 
 export interface SessionSetupProps {
   mode: ModeDefinition;
-  variant: ModeVariant;
   initial: SessionSettings;
   onStart: (settings: SessionSettings) => void;
   onBack: () => void;
 }
 
-export function SessionSetup({ mode, variant, initial, onStart, onBack }: SessionSetupProps) {
+/** A labelled segmented control. Selection is shown by fill, not colour alone. */
+function Segmented<T extends string | number>({
+  label,
+  value,
+  options,
+  onChange,
+  testId,
+}: {
+  label: string;
+  value: T;
+  options: Array<{ value: T; label: string }>;
+  onChange: (value: T) => void;
+  testId?: string;
+}) {
+  return (
+    <div className="setup-row">
+      <span className="setup-row__label" id={`${testId ?? label}-label`}>
+        {label}
+      </span>
+      <div className="segmented" role="group" aria-labelledby={`${testId ?? label}-label`} data-testid={testId}>
+        {options.map((option) => {
+          const selected = option.value === value;
+          return (
+            <button
+              key={String(option.value)}
+              type="button"
+              className={`segmented__item${selected ? ' segmented__item--on' : ''}`}
+              aria-pressed={selected}
+              onClick={() => onChange(option.value)}
+              data-testid={testId === undefined ? undefined : `${testId}-${option.value}`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export function SessionSetup({ mode, initial, onStart, onBack }: SessionSetupProps) {
   const [settings, setSettings] = useState<SessionSettings>(initial);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
+  const voice = useVoiceAvailability();
 
   const patch = (changes: Partial<SessionSettings>): void =>
     setSettings((current) => ({ ...current, ...changes }));
@@ -30,176 +76,234 @@ export function SessionSetup({ mode, variant, initial, onStart, onBack }: Sessio
   const toggleIn = (list: number[], value: number): number[] =>
     list.includes(value) ? list.filter((v) => v !== value) : [...list, value].sort((a, b) => a - b);
 
+  const limitKind = settings.limit.kind;
+  const voiceSupported = mode.supportsVoice === true;
+  const voiceReady = voice.state === 'ready';
+
   return (
     <div data-testid="session-setup">
       <button type="button" className="button button--ghost" onClick={onBack} style={{ marginBottom: 8 }}>
-        ← Modes
+        ← Back
       </button>
-      <h1 className="screen-title">{mode.title}</h1>
-      <div className="card">
-        <h2 className="card__title">{variant.label}</h2>
-        <p className="card__subtitle">{variant.description}</p>
-        {variant.semantics !== null ? (
-          <p className="card__subtitle" style={{ marginTop: 8 }}>
-            <span className="badge">
-              {variant.semantics === 'geometry' ? 'Geometry' : 'Legal moves'}
-            </span>
-          </p>
-        ) : null}
+
+      <div className="setup-header">
+        <h1 className="screen-title" style={{ margin: 0 }}>
+          {mode.title}
+        </h1>
+        <button
+          type="button"
+          className="icon-button"
+          onClick={() => setShowInfo((v) => !v)}
+          aria-expanded={showInfo}
+          aria-label={showInfo ? 'Hide details about this mode' : 'What is this mode?'}
+          data-testid="mode-info"
+        >
+          ?
+        </button>
       </div>
 
-      <div className="card">
-        <label className="field">
-          <span className="field__label">Session length</span>
-          <select
-            className="field__control"
-            data-testid="setting-limit"
-            value={settings.limit.kind}
-            onChange={(event) => {
-              const kind = event.target.value;
-              patch({
-                limit:
-                  kind === 'questions'
-                    ? { kind: 'questions', count: 20 }
-                    : kind === 'total-time'
-                      ? { kind: 'total-time', seconds: 180 }
-                      : { kind: 'endless' },
-              });
-            }}
-          >
-            <option value="questions">Fixed number of questions</option>
-            <option value="total-time">Timed session</option>
-            <option value="endless">Endless</option>
-          </select>
-        </label>
-
-        {settings.limit.kind === 'questions' ? (
-          <label className="field">
-            <span className="field__label">Questions: {settings.limit.count}</span>
-            <input
-              className="field__control"
-              type="range"
-              min={5}
-              max={100}
-              step={5}
-              value={settings.limit.count}
-              onChange={(event) => patch({ limit: { kind: 'questions', count: Number(event.target.value) } })}
-            />
-          </label>
-        ) : null}
-
-        {settings.limit.kind === 'total-time' ? (
-          <label className="field">
-            <span className="field__label">
-              Session time: {Math.round(settings.limit.seconds / 60)} min
-            </span>
-            <input
-              className="field__control"
-              type="range"
-              min={60}
-              max={900}
-              step={30}
-              value={settings.limit.seconds}
-              onChange={(event) =>
-                patch({ limit: { kind: 'total-time', seconds: Number(event.target.value) } })
-              }
-            />
-          </label>
-        ) : null}
-
-        <label className="field">
-          <span className="field__label">Time per question</span>
-          <select
-            className="field__control"
-            data-testid="setting-timer"
-            value={settings.questionTimer.kind === 'none' ? 'none' : String(settings.questionTimer.seconds)}
-            onChange={(event) => {
-              const value = event.target.value;
-              patch({
-                questionTimer:
-                  value === 'none' ? { kind: 'none' } : { kind: 'per-question', seconds: Number(value) },
-              });
-            }}
-          >
-            <option value="none">Untimed</option>
-            <option value="3">3 seconds</option>
-            <option value="5">5 seconds</option>
-            <option value="10">10 seconds</option>
-            <option value="20">20 seconds</option>
-          </select>
-        </label>
-
-        <div className="toggle-row">
-          <span>Accuracy first</span>
-          <input
-            type="checkbox"
-            checked={settings.accuracyFirst}
-            onChange={(event) => patch({ accuracyFirst: event.target.checked })}
-            data-testid="setting-accuracy-first"
-          />
-        </div>
-        <p className="card__subtitle">
-          Holds the per-question timer back until you are answering accurately.
+      {showInfo ? (
+        <p className="card__subtitle" data-testid="mode-info-text" style={{ marginBottom: 'var(--gap)' }}>
+          {mode.description}
         </p>
-      </div>
+      ) : null}
 
-      <div className="card">
-        <label className="field">
-          <span className="field__label">Board orientation</span>
-          <select
-            className="field__control"
-            data-testid="setting-orientation"
-            value={settings.orientation}
-            onChange={(event) => patch({ orientation: event.target.value as SessionSettings['orientation'] })}
-          >
-            <option value="white">White at the bottom</option>
-            <option value="black">Black at the bottom</option>
-            <option value="random">Random each question</option>
-            <option value="alternating">Alternating</option>
-          </select>
-        </label>
+      {mode.variants.length > 1 ? (
+        <Segmented
+          label="Exercise"
+          value={settings.variantId}
+          options={mode.variants.map((v) => ({ value: v.id, label: v.label }))}
+          onChange={(variantId) => patch({ variantId })}
+          testId="setup-variant"
+        />
+      ) : null}
 
-        <label className="field">
-          <span className="field__label">Coordinate labels</span>
-          <select
-            className="field__control"
-            data-testid="setting-labels"
-            value={settings.labels}
-            onChange={(event) => patch({ labels: event.target.value as SessionSettings['labels'] })}
-          >
-            <option value="always">Always shown</option>
-            <option value="never">Hidden</option>
-            <option value="briefly">Briefly shown</option>
-          </select>
-        </label>
+      <Segmented
+        label="Orientation"
+        value={settings.orientation}
+        options={[
+          { value: 'white', label: 'White' },
+          { value: 'black', label: 'Black' },
+          { value: 'alternating', label: 'Alternate' },
+        ]}
+        onChange={(orientation) => patch({ orientation })}
+        testId="setup-orientation"
+      />
 
-        {mode.supportedLayouts.includes('starting') ? (
-          <label className="field">
-            <span className="field__label">Pieces</span>
-            <select
-              className="field__control"
-              data-testid="setting-layout"
-              value={settings.layout}
-              onChange={(event) => patch({ layout: event.target.value as SessionSettings['layout'] })}
+      <Segmented
+        label="Coordinate labels"
+        value={settings.labels}
+        options={[
+          { value: 'always', label: 'On' },
+          { value: 'never', label: 'Off' },
+        ]}
+        onChange={(labels) => patch({ labels })}
+        testId="setup-labels"
+      />
+
+      <Segmented
+        label="Session length"
+        value={limitKind}
+        options={[
+          { value: 'questions', label: 'Questions' },
+          { value: 'total-time', label: 'Timed' },
+          { value: 'endless', label: 'Endless' },
+        ]}
+        onChange={(kind) =>
+          patch({
+            limit:
+              kind === 'questions'
+                ? { kind: 'questions', count: 20 }
+                : kind === 'total-time'
+                  ? { kind: 'total-time', seconds: 180 }
+                  : { kind: 'endless' },
+          })
+        }
+        testId="setup-limit"
+      />
+
+      {settings.limit.kind === 'questions' ? (
+        <Segmented
+          label="How many"
+          value={settings.limit.count}
+          options={[10, 20, 40, 80].map((count) => ({ value: count, label: String(count) }))}
+          onChange={(count) => patch({ limit: { kind: 'questions', count } })}
+          testId="setup-count"
+        />
+      ) : null}
+
+      {settings.limit.kind === 'total-time' ? (
+        <Segmented
+          label="How long"
+          value={settings.limit.seconds}
+          options={[
+            { value: 60, label: '1 min' },
+            { value: 180, label: '3 min' },
+            { value: 300, label: '5 min' },
+            { value: 600, label: '10 min' },
+          ]}
+          onChange={(seconds) => patch({ limit: { kind: 'total-time', seconds } })}
+          testId="setup-duration"
+        />
+      ) : null}
+
+      <Segmented
+        label="Time per question"
+        value={settings.questionTimer.kind === 'none' ? 0 : settings.questionTimer.seconds}
+        options={[
+          { value: 0, label: 'Off' },
+          { value: 3, label: '3s' },
+          { value: 5, label: '5s' },
+          { value: 10, label: '10s' },
+        ]}
+        onChange={(seconds) =>
+          patch({
+            questionTimer: seconds === 0 ? { kind: 'none' } : { kind: 'per-question', seconds },
+          })
+        }
+        testId="setup-per-question"
+      />
+
+      {mode.supportsPromptVisibility === true ? (
+        <Segmented
+          label="Prompt"
+          value={settings.promptVisibility}
+          options={[
+            { value: 'persistent', label: 'Stays up' },
+            { value: 'flash', label: 'Flashes' },
+          ]}
+          onChange={(promptVisibility) => patch({ promptVisibility })}
+          testId="setup-prompt"
+        />
+      ) : null}
+
+      {settings.promptVisibility === 'flash' && mode.supportsPromptVisibility === true ? (
+        <Segmented
+          label="Flash for"
+          value={settings.revealMs}
+          options={[
+            { value: 500, label: '0.5s' },
+            { value: 1000, label: '1s' },
+            { value: 2000, label: '2s' },
+          ]}
+          onChange={(revealMs) => patch({ revealMs })}
+          testId="setup-reveal"
+        />
+      ) : null}
+
+      {mode.supportedLayouts.includes('starting') ? (
+        <Segmented
+          label="Board"
+          value={settings.layout}
+          options={[
+            { value: 'empty', label: 'Empty' },
+            { value: 'starting', label: 'Pieces' },
+          ]}
+          onChange={(layout) => patch({ layout })}
+          testId="setup-layout"
+        />
+      ) : null}
+
+      {mode.supportsHideBoard === true ? (
+        <Segmented
+          label="Board visible"
+          value={settings.hideBoard ? 'hidden' : 'shown'}
+          options={[
+            { value: 'shown', label: 'Shown' },
+            { value: 'hidden', label: 'Hidden' },
+          ]}
+          onChange={(choice) => patch({ hideBoard: choice === 'hidden' })}
+          testId="setup-hide-board"
+        />
+      ) : null}
+
+      {voiceSupported ? (
+        <div className="setup-row" data-testid="setup-voice-row">
+          <span className="setup-row__label" id="voice-label">
+            Voice answers
+          </span>
+          <div className="segmented" role="group" aria-labelledby="voice-label" data-testid="setup-voice">
+            <button
+              type="button"
+              className={`segmented__item${!settings.voiceInput ? ' segmented__item--on' : ''}`}
+              aria-pressed={!settings.voiceInput}
+              onClick={() => patch({ voiceInput: false })}
+              data-testid="setup-voice-off"
             >
-              <option value="empty">Empty board</option>
-              <option value="starting">Starting position</option>
-            </select>
-          </label>
-        ) : null}
-      </div>
+              Off
+            </button>
+            <button
+              type="button"
+              className={`segmented__item${settings.voiceInput ? ' segmented__item--on' : ''}`}
+              aria-pressed={settings.voiceInput}
+              onClick={() => patch({ voiceInput: true })}
+              disabled={!voiceReady}
+              data-testid="setup-voice-on"
+            >
+              On
+            </button>
+          </div>
+          <p className="setup-row__hint" data-testid="setup-voice-status">
+            {voiceReady
+              ? 'The keypad still works at any time.'
+              : voiceShortStatus(voice)}
+          </p>
+        </div>
+      ) : null}
 
       <button
         type="button"
         className="button button--ghost"
         onClick={() => setShowAdvanced((v) => !v)}
+        aria-expanded={showAdvanced}
         style={{ width: '100%', marginBottom: 'var(--gap)' }}
+        data-testid="toggle-advanced"
       >
-        {showAdvanced ? 'Hide' : 'Show'} board filters and feedback options
+        {showAdvanced ? 'Hide' : 'More'} settings
       </button>
 
       {showAdvanced ? (
-        <>
+        <div data-testid="advanced-settings">
           <div className="card">
             <span className="field__label">Files</span>
             <div className="chip-row" style={{ marginBottom: 'var(--gap)' }}>
@@ -208,6 +312,7 @@ export function SessionSetup({ mode, variant, initial, onStart, onBack }: Sessio
                   key={letter}
                   type="button"
                   className={`chip${settings.filters.files.includes(index) ? ' chip--on' : ''}`}
+                  aria-pressed={settings.filters.files.includes(index)}
                   onClick={() =>
                     patch({ filters: { ...settings.filters, files: toggleIn(settings.filters.files, index) } })
                   }
@@ -224,6 +329,7 @@ export function SessionSetup({ mode, variant, initial, onStart, onBack }: Sessio
                   key={rank}
                   type="button"
                   className={`chip${settings.filters.ranks.includes(rank - 1) ? ' chip--on' : ''}`}
+                  aria-pressed={settings.filters.ranks.includes(rank - 1)}
                   onClick={() =>
                     patch({ filters: { ...settings.filters, ranks: toggleIn(settings.filters.ranks, rank - 1) } })
                   }
@@ -240,6 +346,7 @@ export function SessionSetup({ mode, variant, initial, onStart, onBack }: Sessio
                   key={quadrant}
                   type="button"
                   className={`chip${settings.filters.quadrants.includes(quadrant) ? ' chip--on' : ''}`}
+                  aria-pressed={settings.filters.quadrants.includes(quadrant)}
                   style={{ fontFamily: 'var(--font)', fontSize: '0.75rem' }}
                   onClick={() =>
                     patch({
@@ -256,58 +363,41 @@ export function SessionSetup({ mode, variant, initial, onStart, onBack }: Sessio
                 </button>
               ))}
             </div>
-            <p className="card__subtitle" style={{ marginTop: 10 }}>
-              Files and ranks combine: choosing file e and rank 4 asks only about e4.
-            </p>
           </div>
 
           <div className="card">
-            <label className="field">
-              <span className="field__label">Mistakes</span>
-              <select
-                className="field__control"
-                data-testid="setting-retry"
-                value={settings.retry === 'none' ? 'none' : 'later'}
-                onChange={(event) => patch({ retry: event.target.value as SessionSettings['retry'] })}
-              >
-                <option value="none">Just keep going</option>
-                <option value="later">Ask it again later in the session</option>
-              </select>
-            </label>
-            <p className="card__subtitle" style={{ marginTop: -6, marginBottom: 'var(--gap)' }}>
-              A wrong answer always flashes red and lets you try the same question again straight
-              away. This only controls whether it also comes back later.
-            </p>
-
             <div className="toggle-row">
-              <span>Adaptive practice</span>
+              <span>Focus on weak squares</span>
               <input
                 type="checkbox"
                 checked={settings.adaptive}
                 onChange={(event) => patch({ adaptive: event.target.checked })}
+                data-testid="setting-adaptive"
               />
             </div>
             <div className="toggle-row">
-              <span>Show destination hints</span>
+              <span>Accuracy before speed</span>
               <input
                 type="checkbox"
-                checked={settings.showHints}
-                onChange={(event) => patch({ showHints: event.target.checked })}
+                checked={settings.accuracyFirst}
+                onChange={(event) => patch({ accuracyFirst: event.target.checked })}
+                data-testid="setting-accuracy-first"
               />
             </div>
             <div className="toggle-row">
-              <span>Speak the coordinate</span>
+              <span>Ask missed questions again later</span>
               <input
                 type="checkbox"
-                checked={settings.speakPrompts}
-                onChange={(event) => patch({ speakPrompts: event.target.checked })}
+                checked={settings.retry !== 'none'}
+                onChange={(event) => patch({ retry: event.target.checked ? 'later' : 'none' })}
+                data-testid="setting-retry"
               />
             </div>
           </div>
-        </>
+        </div>
       ) : null}
 
-      <div className="button-row">
+      <div className="button-row setup-start">
         <button
           type="button"
           className="button button--primary"

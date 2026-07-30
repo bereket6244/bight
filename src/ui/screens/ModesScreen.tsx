@@ -1,14 +1,16 @@
 /**
- * Mode list and the setup sheet.
+ * Mode browser, grouped by what you want to practice.
  *
- * Every mode and variant in the registry appears here - the list is generated,
- * so a mode can never be added to the app and forgotten in navigation.
+ * The first version rendered one card per generator variant — nine nearly
+ * identical knight cards, five "move the piece" cards. Cards are now one per
+ * mode with a single line of purpose; variants live inside setup, where they
+ * sit alongside the other settings they resemble.
  */
 
 import { useState } from 'react';
-import { MODES } from '../../core/training/registry';
+import { modesByCategory } from '../../core/training/registry';
 import { defaultSettings, type SessionSettings } from '../../core/session/settings';
-import type { ModeDefinition, ModeVariant } from '../../core/training/types';
+import type { ModeDefinition } from '../../core/training/types';
 import { useApp } from '../state/AppContext';
 import { SessionSetup } from './SessionSetup';
 
@@ -18,57 +20,50 @@ export interface ModesScreenProps {
 
 export function ModesScreen({ onStart }: ModesScreenProps) {
   const app = useApp();
-  const [chosen, setChosen] = useState<{ mode: ModeDefinition; variant: ModeVariant } | null>(null);
+  const [chosen, setChosen] = useState<ModeDefinition | null>(null);
 
   if (chosen !== null) {
-    const saved = app.preferences.savedSettings[chosen.mode.id];
+    const saved = app.preferences.savedSettings[chosen.id];
     const base: SessionSettings = {
-      ...(saved ?? defaultSettings(chosen.mode.id, chosen.variant.id)),
-      modeId: chosen.mode.id,
-      variantId: chosen.variant.id,
+      ...(saved ?? defaultSettings(chosen.id, chosen.variants[0]!.id)),
+      modeId: chosen.id,
+      // A saved variant that no longer exists falls back to the first one.
+      variantId:
+        chosen.variants.some((v) => v.id === saved?.variantId) && saved !== undefined
+          ? saved.variantId
+          : chosen.variants[0]!.id,
       sound: app.preferences.sound,
       haptics: app.preferences.haptics,
       speakPrompts: app.preferences.speakPrompts,
       voiceInput: app.preferences.voiceInput,
     };
-    return (
-      <SessionSetup
-        mode={chosen.mode}
-        variant={chosen.variant}
-        initial={base}
-        onStart={onStart}
-        onBack={() => setChosen(null)}
-      />
-    );
+
+    return <SessionSetup mode={chosen} initial={base} onStart={onStart} onBack={() => setChosen(null)} />;
   }
 
   return (
     <div data-testid="modes-screen">
-      <h1 className="screen-title">Modes</h1>
-      <div className="mode-list">
-        {MODES.map((mode) => (
-          <div className="card" key={mode.id}>
-            <h2 className="card__title">{mode.title}</h2>
-            <p className="card__subtitle" style={{ marginBottom: 10 }}>
-              {mode.summary}
-            </p>
-            <div className="chip-row">
-              {mode.variants.map((variant) => (
-                <button
-                  key={variant.id}
-                  type="button"
-                  className="chip"
-                  style={{ fontFamily: 'var(--font)' }}
-                  onClick={() => setChosen({ mode, variant })}
-                  data-testid={`variant-${mode.id}-${variant.id}`}
-                >
-                  {variant.label}
-                </button>
-              ))}
-            </div>
+      <h1 className="screen-title">Practice</h1>
+
+      {modesByCategory().map((group) => (
+        <section key={group.category}>
+          <h2 className="section-title">{group.label}</h2>
+          <div className="mode-list">
+            {group.modes.map((mode) => (
+              <button
+                key={mode.id}
+                type="button"
+                className="mode-card"
+                onClick={() => setChosen(mode)}
+                data-testid={`mode-${mode.id}`}
+              >
+                <span className="mode-card__title">{mode.title}</span>
+                <span className="mode-card__summary">{mode.summary}</span>
+              </button>
+            ))}
           </div>
-        ))}
-      </div>
+        </section>
+      ))}
     </div>
   );
 }

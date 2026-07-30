@@ -101,7 +101,7 @@ export function SessionSummaryView({
 
       <div className="button-row">
         <button type="button" className="button button--primary" onClick={onRestart} data-testid="restart-session">
-          Practise again
+          Practice again
         </button>
         <button type="button" className="button" onClick={onExit} data-testid="summary-exit">
           Done

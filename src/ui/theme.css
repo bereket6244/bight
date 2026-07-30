@@ -51,6 +51,9 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
+
+  /* Height of the pinned bottom navigation, excluding the safe-area inset. */
+  --nav-height: 58px;
 }
 
 :root[data-theme='light'] {
@@ -90,20 +93,46 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/*
+ * App shell.
+ *
+ * The bottom navigation is pinned to the visible window, not to the end of the
+ * document. The shell is a fixed-height flex column and only `.app__main`
+ * scrolls, so the nav can never scroll out of view however long a screen gets.
+ *
+ * Height uses 100dvh (the *dynamic* viewport) with a 100vh fallback: on
+ * Android, 100vh is the viewport with browser chrome retracted, so a shell
+ * sized to it extends under the system bars and pushes the nav off-screen.
+ */
 .app {
   display: flex;
   flex-direction: column;
-  min-height: 100%;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   padding-top: var(--safe-top);
   padding-left: var(--safe-left);
   padding-right: var(--safe-right);
 }
 
 .app__main {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0; /* Lets the flex child actually shrink and scroll. */
   overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   padding: var(--gap);
-  padding-bottom: calc(var(--gap) * 2);
+  /*
+   * Reserve the navigation's height plus the gesture inset, so the last card
+   * on a screen can be scrolled clear of the bar instead of sitting under it.
+   */
+  padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + var(--gap));
+}
+
+/* A session takes the whole shell: no bottom nav competing with the board. */
+.app--session .app__main {
+  padding-bottom: calc(var(--gap) * 2 + var(--safe-bottom));
 }
 
 /* ---------------------------------------------------------------- Board */
@@ -581,16 +610,26 @@ body {
 
 /* ---------------------------------------------------------- Navigation */
 
+/*
+ * Pinned bottom navigation.
+ *
+ * `flex-shrink: 0` keeps it at full height however tall the content is; the
+ * solid background stops content showing through as it scrolls underneath.
+ * The safe-area inset is padding rather than margin so the bar's background
+ * extends behind the gesture area instead of leaving a strip of page there.
+ */
 .tabbar {
+  flex: 0 0 auto;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   border-top: 1px solid var(--border);
   background: var(--surface-raised);
   padding-bottom: var(--safe-bottom);
+  z-index: 10;
 }
 
 .tabbar__item {
-  min-height: var(--touch);
+  min-height: var(--nav-height);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -644,6 +683,136 @@ body {
   margin: 0;
   color: var(--text-muted);
   font-size: 0.85rem;
+}
+
+/* Mode cards carry a name and one line of purpose - never a paragraph. */
+.mode-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mode-card--compact {
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--gap);
+  padding: 12px var(--gap);
+}
+
+.mode-card__meta {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.section-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: calc(var(--gap) * 1.5) 0 8px;
+}
+
+/* ------------------------------------------------------- Setup controls */
+
+.setup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap);
+  margin-bottom: var(--gap);
+}
+
+.icon-button {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.setup-row {
+  margin-bottom: var(--gap);
+}
+
+.setup-row__label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.setup-row__hint {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+/*
+ * Segmented control. Wraps rather than scrolling sideways, so a narrow phone
+ * never produces horizontal overflow.
+ */
+.segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.segmented__item {
+  flex: 1 1 auto;
+  min-width: 4.5rem;
+  min-height: var(--touch);
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Selected state uses fill plus weight, not colour alone. */
+.segmented__item--on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 700;
+}
+
+.segmented__item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.segmented__item:focus-visible,
+.icon-button:focus-visible,
+.chip:focus-visible,
+.mode-card:focus-visible,
+.tabbar__item:focus-visible {
+  outline: 3px solid var(--mark-selected);
+  outline-offset: 2px;
+}
+
+.setting-hint {
+  margin: -4px 0 10px;
+  font-size: 0.78rem;
+}
+
+.setup-start {
+  position: sticky;
+  bottom: 0;
+  padding: var(--gap) 0;
+  background: linear-gradient(to top, var(--surface) 70%, transparent);
 }
 
 .field {

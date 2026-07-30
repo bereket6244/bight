@@ -9,7 +9,7 @@
  *
  *   skill       accuracy (weighted toward recent attempts) and speed
  *   confidence  grows with sample size, so one attempt can never score high
- *   retention   decays as a square goes unpractised
+ *   retention   decays as a square goes unpracticed
  *
  * The same numbers drive adaptive practice: practice weight is the inverse of
  * mastery, capped so one weak square cannot crowd out the rest of the board.
@@ -297,7 +297,7 @@ export function masteryOverview(
 /** Plain-language explanation shown in the app next to the mastery figures. */
 export const MASTERY_EXPLANATION = [
   'A square counts as mastered when four things are true at once:',
-  `you get it right (recent answers count most), you answer it quickly (under ${FAST_MS / 1000}s scores full marks), you have answered it at least ${CONFIDENCE_SAMPLE} times, and you have practised it recently.`,
-  `Mastery fades if you stop practising - a square left alone for about ${RETENTION_HALF_LIFE_DAYS} days drops to roughly half its score, which is why old ground comes back around.`,
+  `you get it right (recent answers count most), you answer it quickly (under ${FAST_MS / 1000}s scores full marks), you have answered it at least ${CONFIDENCE_SAMPLE} times, and you have practiced it recently.`,
+  `Mastery fades if you stop practicing - a square left alone for about ${RETENTION_HALF_LIFE_DAYS} days drops to roughly half its score, which is why old ground comes back around.`,
   'Because sample size is part of the score, one lucky fast answer can never mark a square mastered.',
 ].join(' ');

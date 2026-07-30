@@ -38,12 +38,16 @@ export function gradeAnswer(expected: ExpectedAnswer, submitted: SubmittedAnswer
       if (answer === null) {
         return { correct: false, missed: [expected.square], extra: [], explanation: 'No square was tapped.' };
       }
-      const correct = answer === expected.square;
+      // Fork problems often have several equally correct squares.
+      const acceptable = [expected.square, ...(expected.alternatives ?? [])];
+      const correct = acceptable.includes(answer);
       return {
         correct,
         missed: correct ? [] : [expected.square],
         extra: correct ? [] : [answer],
-        explanation: correct ? `${expected.square} is correct.` : `That was ${answer}. The answer is ${expected.square}.`,
+        explanation: correct
+          ? `${answer} is correct.`
+          : `That was ${answer}. The answer is ${describeSquares(acceptable)}.`,
       };
     }
 
@@ -189,6 +193,9 @@ export function emptyAnswerFor(expected: ExpectedAnswer): SubmittedAnswer {
 export function describeExpected(expected: ExpectedAnswer): string {
   switch (expected.kind) {
     case 'single-square':
+      return expected.alternatives === undefined || expected.alternatives.length === 0
+        ? expected.square
+        : describeSquares([expected.square, ...expected.alternatives]);
     case 'coordinate':
       return expected.square;
     case 'square-set':

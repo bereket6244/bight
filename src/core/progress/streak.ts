@@ -23,7 +23,7 @@ export interface StreakSummary {
   lastCountedDate: string | null;
   /** True when today already counts. */
   todayCounted: boolean;
-  /** True when the streak survives only if the user practises today. */
+  /** True when the streak survives only if the user practices today. */
   atRisk: boolean;
 }
 
@@ -67,7 +67,7 @@ export function buildDailyRecords(sessions: readonly StoredSession[]): DailyReco
  * Current and longest streak from daily records.
  *
  * A streak is unbroken while consecutive counted days are one day apart.
- * Today not yet being practised does not break the streak - yesterday still
+ * Today not yet being practiced does not break the streak - yesterday still
  * counts until the day ends.
  */
 export function computeStreak(daily: readonly DailyRecord[], now: number = Date.now()): StreakSummary {
@@ -166,7 +166,7 @@ export interface AchievementContext {
   bestSessionAccuracy: number;
   bestStreakInSession: number;
   fastestCorrectMs: number | null;
-  modesPractised: ReadonlySet<string>;
+  modesPracticed: ReadonlySet<string>;
   totalModes: number;
 }
 
@@ -192,13 +192,13 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = Object.freeze([
   {
     id: 'week-streak',
     title: 'Seven days',
-    description: 'Practise seven days in a row.',
+    description: 'Practice seven days in a row.',
     progress: (c) => Math.min(1, c.streak.longest / 7),
   },
   {
     id: 'month-streak',
     title: 'Thirty days',
-    description: 'Practise thirty days in a row.',
+    description: 'Practice thirty days in a row.',
     progress: (c) => Math.min(1, c.streak.longest / 30),
   },
   {
@@ -229,8 +229,8 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = Object.freeze([
   {
     id: 'all-modes',
     title: 'Full tour',
-    description: 'Practise every mode at least once.',
-    progress: (c) => (c.totalModes === 0 ? 0 : Math.min(1, c.modesPractised.size / c.totalModes)),
+    description: 'Practice every mode at least once.',
+    progress: (c) => (c.totalModes === 0 ? 0 : Math.min(1, c.modesPracticed.size / c.totalModes)),
   },
   {
     id: 'long-streak-in-session',

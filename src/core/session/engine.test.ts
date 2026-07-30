@@ -314,7 +314,7 @@ describe('multi-square questions complete themselves', () => {
 
 describe('route questions complete themselves', () => {
   const route = settings({
-    modeId: 'knight-vision',
+    modeId: 'knight-route',
     variantId: 'shortest-route',
     limit: { kind: 'endless' },
   });

@@ -20,9 +20,14 @@ import { useApp } from './state/AppContext';
 
 type Tab = 'home' | 'modes' | 'progress' | 'history' | 'settings';
 
+/**
+ * Every tab carries a text label as well as its glyph. The glyphs are not
+ * universally understood on their own, so they are decoration on top of the
+ * label rather than a replacement for it.
+ */
 const TABS: Array<{ id: Tab; label: string; icon: string }> = [
   { id: 'home', label: 'Home', icon: '◆' },
-  { id: 'modes', label: 'Modes', icon: '▦' },
+  { id: 'modes', label: 'Practice', icon: '▦' },
   { id: 'progress', label: 'Progress', icon: '▲' },
   { id: 'history', label: 'History', icon: '≡' },
   { id: 'settings', label: 'Settings', icon: '⚙' },
@@ -84,7 +89,9 @@ export function App() {
 
   if (session !== null) {
     return (
-      <div className="app">
+      // A session gets the whole shell: the bottom nav would only compete with
+      // the board, and Pause/End already provide a clear way out.
+      <div className="app app--session">
         <main className="app__main">
           {confirmExit ? (
             <div className="card" role="dialog" aria-modal="true" data-testid="confirm-exit">
@@ -94,7 +101,7 @@ export function App() {
               </p>
               <div className="button-row" style={{ marginTop: 'var(--gap)' }}>
                 <button type="button" className="button button--primary" onClick={() => setConfirmExit(false)}>
-                  Keep practising
+                  Keep practicing
                 </button>
                 <button type="button" className="button button--danger" onClick={endSession}>
                   Leave

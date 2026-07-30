@@ -1,24 +1,27 @@
 /**
- * Home: streak, daily goal, and one tap into practice.
+ * Home: streak, then what you actually practice.
  *
- * Recommended modes are shown for quick access, but the full list is always
- * one tap away on the Modes tab - nothing is hidden behind a recommendation.
+ * The first version showed a fixed "Recommended" list identical for every
+ * user, plus several paragraphs repeating what the app is. Both are gone.
+ * Recent and Frequent are derived from local session history; on a fresh
+ * install a plainly-labelled "Start here" list appears instead of pretending
+ * defaults are personalized.
  */
 
-import { useEffect, useState } from 'react';
-import { MODES, RECOMMENDED_MODE_IDS, getMode } from '../../core/training/registry';
+import { useEffect, useMemo, useState } from 'react';
+import { getMode, findMode, modeLabel, variantLabel, STARTER_MODE_IDS } from '../../core/training/registry';
 import { defaultSettings, type SessionSettings } from '../../core/session/settings';
 import {
   buildDailyRecords,
   computeStreak,
   dailyGoalProgress,
   rollingWeek,
-  MIN_STREAK_QUESTIONS,
 } from '../../core/progress/streak';
-import { overallStats } from '../../core/progress/stats';
-import type { StoredAttempt, StoredSession } from '../../core/storage/types';
+import { frequentModes, hasEnoughHistory, recentModes } from '../../core/progress/usage';
+import type { StoredSession } from '../../core/storage/types';
+import type { ModeId } from '../../core/training/types';
 import { useApp } from '../state/AppContext';
-import { APP_NAME, APP_TAGLINE } from '../../core/version';
+import { APP_NAME } from '../../core/version';
 
 export interface HomeScreenProps {
   onStart: (settings: SessionSettings) => void;
@@ -28,21 +31,15 @@ export interface HomeScreenProps {
 export function HomeScreen({ onStart, onBrowseModes }: HomeScreenProps) {
   const app = useApp();
   const [sessions, setSessions] = useState<StoredSession[]>([]);
-  const [attempts, setAttempts] = useState<StoredAttempt[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
-        const [loadedSessions, loadedAttempts] = await Promise.all([
-          app.repository.getSessions(),
-          app.repository.getAttempts({ limit: 2000 }),
-        ]);
-        if (cancelled) return;
-        setSessions(loadedSessions);
-        setAttempts(loadedAttempts);
+        const loaded = await app.repository.getSessions();
+        if (!cancelled) setSessions(loaded);
       } catch {
-        // A read failure just means an empty home screen, not a crash.
+        // An empty home screen is a fine outcome for a read failure.
       }
     })();
     return () => {
@@ -50,45 +47,30 @@ export function HomeScreen({ onStart, onBrowseModes }: HomeScreenProps) {
     };
   }, [app.repository, app.dataVersion]);
 
-  const daily = buildDailyRecords(sessions);
+  const daily = useMemo(() => buildDailyRecords(sessions), [sessions]);
   const streak = computeStreak(daily);
   const goal = dailyGoalProgress(daily, app.preferences.dailyGoal);
   const week = rollingWeek(daily);
-  const stats = overallStats(attempts);
 
-  const lastMode = app.preferences.lastModeId;
-  const resumeSettings: SessionSettings | null =
-    lastMode === null
-      ? null
-      : (app.preferences.savedSettings[lastMode] ??
-        defaultSettings(lastMode, app.preferences.lastVariantId ?? 'standard'));
+  const recent = useMemo(() => recentModes(sessions), [sessions]);
+  const frequent = useMemo(() => frequentModes(sessions), [sessions]);
+  const personalized = hasEnoughHistory(sessions);
+
+  /**
+   * Opens a mode with the settings last used for it, falling back to defaults.
+   * A mode that no longer exists is never launched.
+   */
+  const launch = (modeId: ModeId, variantId: string): void => {
+    const mode = findMode(modeId);
+    if (mode === undefined) return;
+    const saved = app.preferences.savedSettings[modeId];
+    const base = saved ?? defaultSettings(modeId, variantId);
+    onStart({ ...base, modeId, variantId });
+  };
 
   return (
     <div data-testid="home-screen">
-      <h1 className="screen-title">
-        {APP_NAME} <span className="badge">{APP_TAGLINE}</span>
-      </h1>
-
-      {!app.preferences.onboarded ? (
-        <div className="card" data-testid="onboarding">
-          <h2 className="card__title">Know every square without thinking</h2>
-          <p className="card__subtitle">
-            Bight drills coordinates and board vision — naming squares, seeing what a piece
-            attacks, and holding the board in your head. It works entirely offline and keeps
-            everything on this device.
-          </p>
-          <div className="button-row" style={{ marginTop: 'var(--gap)' }}>
-            <button
-              type="button"
-              className="button"
-              onClick={() => void app.updatePreferences({ onboarded: true })}
-              data-testid="dismiss-onboarding"
-            >
-              Got it
-            </button>
-          </div>
-        </div>
-      ) : null}
+      <h1 className="screen-title">{APP_NAME}</h1>
 
       <div className="card">
         <div className="stat-grid">
@@ -99,20 +81,14 @@ export function HomeScreen({ onStart, onBrowseModes }: HomeScreenProps) {
             <div className="stat__label">Day streak</div>
           </div>
           <div className="stat">
-            <div className="stat__value">{streak.longest}</div>
-            <div className="stat__label">Longest</div>
-          </div>
-          <div className="stat">
             <div className="stat__value">
               {goal.done}/{goal.goal}
             </div>
-            <div className="stat__label">Today's goal</div>
+            <div className="stat__label">Today</div>
           </div>
           <div className="stat">
-            <div className="stat__value">
-              {stats.attempts === 0 ? '—' : `${Math.round(stats.accuracy * 100)}%`}
-            </div>
-            <div className="stat__label">Accuracy</div>
+            <div className="stat__value">{streak.longest}</div>
+            <div className="stat__label">Best</div>
           </div>
         </div>
 
@@ -127,54 +103,76 @@ export function HomeScreen({ onStart, onBrowseModes }: HomeScreenProps) {
             </div>
           ))}
         </div>
-        <p className="card__subtitle" style={{ marginTop: 8 }}>
-          A day counts once you finish a session of at least {MIN_STREAK_QUESTIONS} questions.
-          {streak.atRisk ? ' Practise today to keep your streak.' : ''}
-        </p>
       </div>
 
-      {resumeSettings !== null ? (
-        <div className="card">
-          <h2 className="card__title">Carry on where you left off</h2>
-          <p className="card__subtitle">{getMode(resumeSettings.modeId).title}</p>
-          <div className="button-row" style={{ marginTop: 'var(--gap)' }}>
-            <button
-              type="button"
-              className="button button--primary"
-              onClick={() => onStart(resumeSettings)}
-              data-testid="resume-last"
-            >
-              Practise
-            </button>
+      {personalized && recent.length > 0 ? (
+        <section data-testid="recent-section">
+          <h2 className="section-title">Recent</h2>
+          <div className="mode-list">
+            {recent.map((entry) => (
+              <button
+                key={`${entry.modeId}:${entry.variantId}`}
+                type="button"
+                className="mode-card mode-card--compact"
+                onClick={() => launch(entry.modeId, entry.variantId)}
+                data-testid={`recent-${entry.modeId}`}
+              >
+                <span className="mode-card__title">{modeLabel(entry.modeId)}</span>
+                <span className="mode-card__meta">{variantLabel(entry.modeId, entry.variantId)}</span>
+              </button>
+            ))}
           </div>
-        </div>
+        </section>
       ) : null}
 
-      <h2 className="screen-title" style={{ fontSize: '1.1rem' }}>
-        Recommended
-      </h2>
-      <div className="mode-list">
-        {RECOMMENDED_MODE_IDS.map((modeId) => {
-          const mode = MODES.find((m) => m.id === modeId);
-          if (mode === undefined) return null;
-          return (
-            <button
-              key={mode.id}
-              type="button"
-              className="mode-card"
-              onClick={() => onStart(defaultSettings(mode.id, mode.variants[0]?.id ?? 'standard'))}
-              data-testid={`quick-start-${mode.id}`}
-            >
-              <p className="mode-card__title">{mode.title}</p>
-              <p className="mode-card__summary">{mode.summary}</p>
-            </button>
-          );
-        })}
-      </div>
+      {personalized && frequent.length > 0 ? (
+        <section data-testid="frequent-section">
+          <h2 className="section-title">You practice these most</h2>
+          <div className="mode-list">
+            {frequent.map((entry) => (
+              <button
+                key={`${entry.modeId}:${entry.variantId}`}
+                type="button"
+                className="mode-card mode-card--compact"
+                onClick={() => launch(entry.modeId, entry.variantId)}
+                data-testid={`frequent-${entry.modeId}`}
+              >
+                <span className="mode-card__title">{modeLabel(entry.modeId)}</span>
+                <span className="mode-card__meta">
+                  {entry.sessions} session{entry.sessions === 1 ? '' : 's'}
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {!personalized ? (
+        <section data-testid="starter-section">
+          <h2 className="section-title">Start here</h2>
+          <div className="mode-list">
+            {STARTER_MODE_IDS.map((modeId) => {
+              const mode = getMode(modeId);
+              return (
+                <button
+                  key={mode.id}
+                  type="button"
+                  className="mode-card"
+                  onClick={() => launch(mode.id, mode.variants[0]!.id)}
+                  data-testid={`starter-${mode.id}`}
+                >
+                  <span className="mode-card__title">{mode.title}</span>
+                  <span className="mode-card__summary">{mode.summary}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
 
       <div className="button-row" style={{ marginTop: 'var(--gap)' }}>
-        <button type="button" className="button" onClick={onBrowseModes}>
-          All {MODES.length} modes
+        <button type="button" className="button" onClick={onBrowseModes} data-testid="browse-modes">
+          All modes
         </button>
       </div>
     </div>

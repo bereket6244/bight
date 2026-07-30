@@ -1,37 +1,43 @@
 /**
- * The mode registry. Adding a mode here is the only wiring a new mode needs -
- * the session engine, progress views and settings all read from this list.
+ * The mode registry.
+ *
+ * This list is the single source of truth for what the app offers. The mode
+ * browser, Home's recent/frequent sections, session setup and the tests all
+ * read from it, so a mode cannot exist in one place and be forgotten in
+ * another.
+ *
+ * Modes removed in the second pass are absent here on purpose. Their ids still
+ * resolve to readable labels through `legacy.ts` so stored history and old
+ * backups keep working.
  */
 
-import type { ModeDefinition, ModeId, ModeVariant } from './types';
 import {
-  coordinateToSquareMode,
-  memoryCoordinateToSquareMode,
-  memorySquareToCoordinateMode,
-  squareToCoordinateMode,
-} from './generators/coordinate';
+  MODE_CATEGORY_LABELS,
+  type ModeCategory,
+  type ModeDefinition,
+  type ModeId,
+  type ModeVariant,
+} from './types';
+import { coordinateToSquareMode, squareToCoordinateMode } from './generators/coordinate';
 import { squareColorMode } from './generators/color';
-import { knightVisionMode } from './generators/knight';
-import {
-  alignmentMode,
-  blockerMode,
-  pieceMovementMode,
-  pieceVisionMode,
-  sequenceMode,
-} from './generators/pieces';
+import { knightRouteMode, knightVisionMode } from './generators/knight';
+import { knightForkMode, queenForkMode } from './generators/fork';
+import { notationMode } from './generators/notation';
+import { alignmentMode, blockerMode, pieceVisionMode } from './generators/pieces';
+import { legacyModeLabel, legacyVariantLabel } from './legacy';
 
 export const MODES: readonly ModeDefinition[] = Object.freeze([
   coordinateToSquareMode,
   squareToCoordinateMode,
+  alignmentMode,
   squareColorMode,
   knightVisionMode,
+  knightRouteMode,
+  knightForkMode,
+  queenForkMode,
+  notationMode,
   pieceVisionMode,
-  pieceMovementMode,
-  memoryCoordinateToSquareMode,
-  memorySquareToCoordinateMode,
-  alignmentMode,
   blockerMode,
-  sequenceMode,
 ]);
 
 const MODE_BY_ID = new Map<ModeId, ModeDefinition>(MODES.map((mode) => [mode.id, mode]));
@@ -46,23 +52,63 @@ export function findMode(id: string): ModeDefinition | undefined {
   return MODE_BY_ID.get(id as ModeId);
 }
 
+/** True when the id names a mode the app still offers. */
+export function isActiveMode(id: string): boolean {
+  return MODE_BY_ID.has(id as ModeId);
+}
+
 export function getVariant(modeId: ModeId, variantId: string): ModeVariant {
   const mode = getMode(modeId);
-  const variant = mode.variants.find((v) => v.id === variantId);
-  return variant ?? (mode.variants[0] as ModeVariant);
+  return mode.variants.find((v) => v.id === variantId) ?? (mode.variants[0] as ModeVariant);
 }
 
 export function defaultVariantId(modeId: ModeId): string {
   return (getMode(modeId).variants[0] as ModeVariant).id;
 }
 
-/** Every (mode, variant) pair, used by the mode list and by tests. */
 export function allModeVariants(): Array<{ mode: ModeDefinition; variant: ModeVariant }> {
   return MODES.flatMap((mode) => mode.variants.map((variant) => ({ mode, variant })));
 }
 
-/** Modes suggested on the home screen for someone starting out. */
-export const RECOMMENDED_MODE_IDS: readonly ModeId[] = Object.freeze([
+/** Modes grouped for the browser, in a stable display order. */
+export const CATEGORY_ORDER: readonly ModeCategory[] = Object.freeze([
+  'coordinates',
+  'square-color',
+  'knight',
+  'forks',
+  'notation',
+  'position',
+]);
+
+export function modesByCategory(): Array<{ category: ModeCategory; label: string; modes: ModeDefinition[] }> {
+  return CATEGORY_ORDER.map((category) => ({
+    category,
+    label: MODE_CATEGORY_LABELS[category],
+    modes: MODES.filter((mode) => mode.category === category),
+  })).filter((group) => group.modes.length > 0);
+}
+
+/**
+ * A readable name for any mode id, including ones that no longer exist.
+ * History and Progress render this so old sessions never show a raw id.
+ */
+export function modeLabel(modeId: string): string {
+  return findMode(modeId)?.title ?? legacyModeLabel(modeId) ?? modeId;
+}
+
+export function variantLabel(modeId: string, variantId: string): string {
+  const mode = findMode(modeId);
+  const variant = mode?.variants.find((v) => v.id === variantId);
+  if (variant !== undefined) return variant.label;
+  return legacyVariantLabel(modeId, variantId) ?? variantId;
+}
+
+/**
+ * Shown on a fresh install, before there is any history to rank.
+ * Deliberately labelled "Start here" in the UI rather than dressed up as a
+ * personalized recommendation.
+ */
+export const STARTER_MODE_IDS: readonly ModeId[] = Object.freeze([
   'coordinate-to-square',
   'square-to-coordinate',
   'square-color',

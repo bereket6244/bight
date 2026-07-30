@@ -16,18 +16,24 @@ import type {
   SquareName,
 } from '../chess/types';
 
+/**
+ * Modes currently offered.
+ *
+ * Removed modes (`memory-*`, `piece-movement`, `sequence`) are deliberately
+ * absent. Their ids live on in `legacy.ts` so stored history stays readable.
+ */
 export type ModeId =
   | 'coordinate-to-square'
   | 'square-to-coordinate'
-  | 'memory-square-to-coordinate'
-  | 'memory-coordinate-to-square'
   | 'square-color'
   | 'knight-vision'
+  | 'knight-route'
+  | 'knight-fork'
+  | 'queen-fork'
+  | 'notation'
   | 'piece-vision'
-  | 'piece-movement'
-  | 'alignment'
   | 'blockers'
-  | 'sequence';
+  | 'alignment';
 
 /** How the user supplies an answer, which decides the answer control shown. */
 export type AnswerKind =
@@ -49,6 +55,14 @@ export type AnswerKind =
 export interface SingleSquareAnswer {
   kind: 'single-square';
   square: SquareName;
+  /**
+   * Other squares that are equally correct.
+   *
+   * Fork problems routinely have more than one solution, and accepting only
+   * the one the generator happened to list first would mark correct answers
+   * wrong. `square` is simply the one shown in a review.
+   */
+  alternatives?: SquareName[];
 }
 
 export interface SquareSetAnswer {
@@ -183,6 +197,12 @@ export interface Question {
   primarySquare: SquareName | null;
   /** Seed that produced this question, for reproduction. */
   seed: number;
+  /**
+   * Full FEN of the position, when the question is about a real position
+   * rather than a bare board. Notation and legal-move questions need the side
+   * to move and castling rights, which a placement string alone cannot carry.
+   */
+  positionFen?: string;
 }
 
 /** Result of grading one submitted answer. */
@@ -221,7 +241,7 @@ export interface GeneratorContext {
   labels: LabelMode;
   layout: PieceLayout;
   /**
-   * Per-square weights from the mastery model. Higher means "practise this
+   * Per-square weights from the mastery model. Higher means "practice this
    * more". Absent squares default to 1.
    */
   weights?: ReadonlyMap<SquareName, number>;
@@ -246,16 +266,46 @@ export interface ModeVariant {
   pieceType?: PieceType;
 }
 
+/**
+ * Groups the mode browser is organised around.
+ *
+ * Cards are grouped by what the user wants to practice, not by which generator
+ * happens to produce them.
+ */
+export type ModeCategory =
+  | 'coordinates'
+  | 'square-color'
+  | 'knight'
+  | 'forks'
+  | 'notation'
+  | 'position';
+
+export const MODE_CATEGORY_LABELS: Record<ModeCategory, string> = {
+  coordinates: 'Coordinates',
+  'square-color': 'Square color',
+  knight: 'Knight vision',
+  forks: 'Forks',
+  notation: 'Notation and piece selection',
+  position: 'Position vision',
+};
+
 export interface ModeDefinition {
   id: ModeId;
   title: string;
-  /** One-line description shown on the mode list. */
+  /** One-line description shown on the mode list. Keep it to one line. */
   summary: string;
-  /** Longer explanation shown before the first session. */
+  /** Longer explanation, shown only in the optional info sheet. */
   description: string;
+  category: ModeCategory;
   variants: ModeVariant[];
   /** Which board layouts make sense for this mode. */
   supportedLayouts: PieceLayout[];
+  /** Whether a hidden-board (visualization) option is meaningful here. */
+  supportsHideBoard?: boolean;
+  /** Whether the prompt-visibility (persistent/flash) setting applies. */
+  supportsPromptVisibility?: boolean;
+  /** Whether spoken answers make sense for this mode's answer kind. */
+  supportsVoice?: boolean;
   /** Generates one question. Must always return a well-formed question. */
   generate: (context: GeneratorContext, rng: Rng, variantId: string) => Question;
 }

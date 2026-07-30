@@ -46,7 +46,7 @@ export interface StoredSession {
   appVersion: string;
 }
 
-/** One row per day the user practised, in the device's local timezone. */
+/** One row per day the user practiced, in the device's local timezone. */
 export interface DailyRecord {
   /** Local date as YYYY-MM-DD. */
   date: string;
@@ -80,7 +80,7 @@ export interface PreferencesRecord {
   voiceInput: boolean;
   /** Daily goal in scored questions. */
   dailyGoal: number;
-  /** Last mode the user practised, restored on next launch. */
+  /** Last mode the user practiced, restored on next launch. */
   lastModeId: ModeId | null;
   lastVariantId: string | null;
   /** Whether the first-run explanation has been dismissed. */

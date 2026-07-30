@@ -151,7 +151,11 @@ function generatorContext(state: SessionState, deps: SessionDeps): GeneratorCont
     labels: state.settings.labels,
     layout: state.settings.layout,
     weights: state.settings.adaptive ? deps.weights : undefined,
-    revealMs: state.settings.revealMs,
+    // `revealMs` is what makes a prompt flash, so it is only passed when the
+    // user actually asked for a flash. Passing it unconditionally would hide
+    // every prompt after a second, which is not the default behaviour.
+    revealMs: state.settings.promptVisibility === 'flash' ? state.settings.revealMs : undefined,
+    hideBoard: state.settings.hideBoard,
     showHints: state.settings.showHints,
   };
 }

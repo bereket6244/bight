@@ -113,7 +113,7 @@ export function ProgressScreen() {
     bestSessionAccuracy: Math.max(0, ...sessions.map((s) => s.accuracy)),
     bestStreakInSession: Math.max(0, ...sessions.map((s) => s.bestStreak)),
     fastestCorrectMs: timing.fastestCorrectMs,
-    modesPractised: new Set(attempts.map((a) => a.modeId)),
+    modesPracticed: new Set(attempts.map((a) => a.modeId)),
     totalModes: MODES.length,
   });
 

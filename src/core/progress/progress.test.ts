@@ -142,7 +142,7 @@ describe('mastery scoring', () => {
     expect(slow?.recentAccuracy).toBeCloseTo(fast?.recentAccuracy as number, 5);
   });
 
-  it('decays a score that has not been practised recently', () => {
+  it('decays a score that has not been practiced recently', () => {
     const attempts = goodRun('e4', 10);
     const fresh = computeMastery(attempts, { now: T0 }).get('e4');
     const stale = computeMastery(attempts, { now: T0 + RETENTION_HALF_LIFE_DAYS * DAY }).get('e4');
@@ -376,7 +376,7 @@ describe('achievements', () => {
     bestSessionAccuracy: 0,
     bestStreakInSession: 0,
     fastestCorrectMs: null,
-    modesPractised: new Set<string>(),
+    modesPracticed: new Set<string>(),
     totalModes: 11,
   };
 

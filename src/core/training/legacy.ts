@@ -67,11 +67,11 @@ export const DEPRECATED_VARIANTS: Record<string, string> = {
 };
 
 export function isDeprecatedMode(modeId: string): boolean {
-  return Object.hasOwn(DEPRECATED_MODES, modeId);
+  return Object.prototype.hasOwnProperty.call(DEPRECATED_MODES, modeId);
 }
 
 export function isDeprecatedVariant(modeId: string, variantId: string): boolean {
-  return Object.hasOwn(DEPRECATED_VARIANTS, `${modeId}:${variantId}`);
+  return Object.prototype.hasOwnProperty.call(DEPRECATED_VARIANTS, `${modeId}:${variantId}`);
 }
 
 /** Where a removed mode's saved settings should now point, if anywhere. */

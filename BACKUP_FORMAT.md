@@ -66,7 +66,7 @@ session can be repeated exactly.
 
 ### `data.daily[]`
 
-One row per day practised, keyed by local date (`YYYY-MM-DD`): `sessions`,
+One row per day practiced, keyed by local date (`YYYY-MM-DD`): `sessions`,
 `questions`, `correct`, `counted`. `counted` is true once the day met the
 streak threshold.
 

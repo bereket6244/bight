@@ -1,26 +1,37 @@
 /**
- * Settings: appearance, feedback, voice, backup and storage.
+ * Settings.
  *
- * Backup export and import go through the Storage Access Framework via the
- * browser's own download and file-picker flows, which Capacitor maps to the
- * Android document picker. No broad storage permission is requested.
+ * Audio used to be a single "Sound" checkbox plus a vague voice toggle, which
+ * told you nothing about what would make noise, what needed a microphone, or
+ * why voice did nothing. It is now three clearly separate capabilities:
+ *
+ *   Sound effects   — correct/wrong tones.        No microphone.
+ *   Spoken prompts  — the system voice reads out. No microphone.
+ *   Voice answers   — on-device recognition.      Microphone, on request only.
+ *
+ * Backup import/export uses the browser's own download and file-picker flows,
+ * which Capacitor maps to the Android document picker. No broad storage
+ * permission is requested.
  */
 
 import { useRef, useState } from 'react';
 import { exportBackup, importBackup, inspectBackup } from '../../core/backup/service';
 import { backupFilename } from '../../core/backup/format';
-import { MASTERY_EXPLANATION } from '../../core/progress/mastery';
-import { MIN_STREAK_QUESTIONS } from '../../core/progress/streak';
 import { useApp } from '../state/AppContext';
-import { APP_NAME, APP_VERSION, PACKAGE_ID } from '../../core/version';
-import { voiceStatusLabel, useVoiceAvailability } from '../../services/voice/useVoice';
+import { APP_VERSION, PACKAGE_ID } from '../../core/version';
+import {
+  useMicrophonePermission,
+  useVoiceAvailability,
+  voiceBadge,
+  voiceStatusLabel,
+} from '../../services/voice/useVoice';
+import { speechAvailable } from '../../services/speech';
 
 /**
  * Reads a picked file as text.
  *
- * `Blob.text()` is the modern path, but it is absent from older Android
- * WebViews, so FileReader is kept as a fallback rather than assuming the
- * newer API is present on whatever WebView the device ships.
+ * `Blob.text()` is absent from older Android WebViews, so FileReader stays as
+ * a fallback rather than assuming the newer API exists.
  */
 function readFileText(file: File): Promise<string> {
   if (typeof file.text === 'function') return file.text();
@@ -32,12 +43,46 @@ function readFileText(file: File): Promise<string> {
   });
 }
 
+function Toggle({
+  label,
+  hint,
+  checked,
+  onChange,
+  testId,
+  disabled = false,
+}: {
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  testId: string;
+  disabled?: boolean;
+}) {
+  return (
+    <>
+      <div className="toggle-row">
+        <span>{label}</span>
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.checked)}
+          data-testid={testId}
+          aria-label={label}
+        />
+      </div>
+      {hint !== undefined ? <p className="card__subtitle setting-hint">{hint}</p> : null}
+    </>
+  );
+}
+
 export function SettingsScreen() {
   const app = useApp();
   const fileInput = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const [pendingImport, setPendingImport] = useState<{ json: string; summary: string } | null>(null);
   const voice = useVoiceAvailability();
+  const microphone = useMicrophonePermission();
 
   const handleExport = async (): Promise<void> => {
     try {
@@ -66,8 +111,8 @@ export function SettingsScreen() {
     const preview = inspection.preview;
     setPendingImport({
       json,
-      summary: `${preview.attempts} answers, ${preview.sessions} sessions, ${preview.days} days${
-        preview.needsMigration ? ` · will upgrade from schema ${preview.schemaVersion}` : ''
+      summary: `${preview.attempts} answers, ${preview.sessions} sessions${
+        preview.needsMigration ? ' · will be upgraded' : ''
       }`,
     });
     setMessage(null);
@@ -77,17 +122,34 @@ export function SettingsScreen() {
     if (pendingImport === null) return;
     const result = await importBackup(app.repository, pendingImport.json, mode);
     if (result.ok) {
-      const migrated = result.migrationsApplied.length > 0 ? ` Migrations applied: ${result.migrationsApplied.length}.` : '';
-      setMessage({ kind: 'ok', text: `Backup imported.${migrated}` });
+      setMessage({ kind: 'ok', text: 'Backup imported.' });
       app.notifyDataChanged();
     } else {
       setMessage({
         kind: 'error',
-        text: `${result.errors.join(' ')}${result.rolledBack ? ' Your data was restored.' : ' Nothing was changed.'}`,
+        text: `${result.errors.join(' ')}${result.rolledBack ? ' Your data was restored.' : ' Nothing changed.'}`,
       });
     }
     setPendingImport(null);
   };
+
+  /** Enabling voice is the only thing that may ask for the microphone. */
+  const toggleVoice = async (enabled: boolean): Promise<void> => {
+    if (!enabled) {
+      await app.updatePreferences({ voiceInput: false });
+      return;
+    }
+    const granted = await microphone.request();
+    await app.updatePreferences({ voiceInput: granted });
+    if (!granted) {
+      setMessage({
+        kind: 'error',
+        text: 'Voice answers need microphone access. Touch and keypad input still work.',
+      });
+    }
+  };
+
+  const voiceUsable = voice.state === 'ready';
 
   return (
     <div data-testid="settings-screen">
@@ -116,42 +178,78 @@ export function SettingsScreen() {
             <option value="system">Match system</option>
           </select>
         </label>
-        <p className="card__subtitle">
-          The green board stays the same in both themes so the image you are training does not
-          change.
-        </p>
       </div>
 
       <div className="card">
-        <h2 className="card__title">Feedback</h2>
-        <div className="toggle-row">
-          <span>Sound</span>
+        <h2 className="card__title">Sound and voice</h2>
+
+        <Toggle
+          label="Sound effects"
+          hint="Short tones for right and wrong answers."
+          checked={app.preferences.sound}
+          onChange={(value) => void app.updatePreferences({ sound: value })}
+          testId="setting-sound-effects"
+        />
+
+        <Toggle
+          label="Haptics"
+          hint="A short buzz on each answer."
+          checked={app.preferences.haptics}
+          onChange={(value) => void app.updatePreferences({ haptics: value })}
+          testId="setting-haptics"
+        />
+
+        <Toggle
+          label="Spoken prompts"
+          hint={
+            speechAvailable()
+              ? 'Reads coordinates aloud using your device voice. No microphone needed.'
+              : 'This device has no speech voice installed.'
+          }
+          checked={app.preferences.speakPrompts}
+          disabled={!speechAvailable()}
+          onChange={(value) => void app.updatePreferences({ speakPrompts: value })}
+          testId="setting-spoken-prompts"
+        />
+
+        <div className="toggle-row" style={{ marginTop: 'var(--gap)' }}>
+          <span>
+            Voice answers{' '}
+            <span className={`badge${voiceUsable ? ' badge--on' : ''}`} data-testid="voice-badge">
+              {voiceBadge(voice)}
+            </span>
+          </span>
           <input
             type="checkbox"
-            checked={app.preferences.sound}
-            onChange={(event) => void app.updatePreferences({ sound: event.target.checked })}
-            data-testid="setting-sound"
+            checked={app.preferences.voiceInput}
+            disabled={!voiceUsable}
+            onChange={(event) => void toggleVoice(event.target.checked)}
+            data-testid="setting-voice-answers"
+            aria-label="Voice answers"
           />
         </div>
-        <div className="toggle-row">
-          <span>Haptics</span>
-          <input
-            type="checkbox"
-            checked={app.preferences.haptics}
-            onChange={(event) => void app.updatePreferences({ haptics: event.target.checked })}
-            data-testid="setting-haptics"
-          />
-        </div>
-        <div className="toggle-row">
-          <span>Speak coordinates</span>
-          <input
-            type="checkbox"
-            checked={app.preferences.speakPrompts}
-            onChange={(event) => void app.updatePreferences({ speakPrompts: event.target.checked })}
-          />
-        </div>
-        <label className="field" style={{ marginTop: 'var(--gap)' }}>
-          <span className="field__label">Daily goal: {app.preferences.dailyGoal} questions</span>
+        <p className="card__subtitle setting-hint" data-testid="voice-status">
+          {voiceStatusLabel(voice)}
+          {voiceUsable ? ' The microphone is requested only when you turn this on.' : ''}
+        </p>
+        {microphone.state === 'denied' ? (
+          <div className="button-row" style={{ marginTop: 8 }}>
+            <button
+              type="button"
+              className="button"
+              onClick={() => void toggleVoice(true)}
+              data-testid="retry-microphone"
+            >
+              Try again
+            </button>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="card">
+        <h2 className="card__title">Daily goal</h2>
+        <label className="field">
+          <span className="field__label">{app.preferences.dailyGoal} questions a day</span>
           <input
             className="field__control"
             type="range"
@@ -160,37 +258,19 @@ export function SettingsScreen() {
             step={10}
             value={app.preferences.dailyGoal}
             onChange={(event) => void app.updatePreferences({ dailyGoal: Number(event.target.value) })}
+            aria-label="Daily goal in questions"
           />
         </label>
       </div>
 
       <div className="card">
-        <h2 className="card__title">Voice answers</h2>
-        <div className="toggle-row">
-          <span>Enable voice input</span>
-          <input
-            type="checkbox"
-            checked={app.preferences.voiceInput}
-            onChange={(event) => void app.updatePreferences({ voiceInput: event.target.checked })}
-            data-testid="setting-voice"
-          />
-        </div>
-        <p className="card__subtitle">
-          {voiceStatusLabel(voice)} The microphone is only requested when you start a session with
-          voice switched on, and recognition never leaves the device. Touch input always stays
-          available.
-        </p>
-      </div>
-
-      <div className="card">
         <h2 className="card__title">Backup</h2>
         <p className="card__subtitle" style={{ marginBottom: 'var(--gap)' }}>
-          Everything is stored on this device only. Export a backup to keep a copy or move to a new
-          phone.
+          Everything stays on this device.
         </p>
         <div className="button-row">
           <button type="button" className="button" onClick={() => void handleExport()} data-testid="export-backup">
-            Export backup
+            Export
           </button>
           <button
             type="button"
@@ -198,7 +278,7 @@ export function SettingsScreen() {
             onClick={() => fileInput.current?.click()}
             data-testid="import-backup"
           >
-            Import backup
+            Import
           </button>
         </div>
         <input
@@ -223,27 +303,14 @@ export function SettingsScreen() {
                 Merge
               </button>
               <button type="button" className="button" onClick={() => void runImport('replace')}>
-                Replace everything
+                Replace
               </button>
               <button type="button" className="button button--ghost" onClick={() => setPendingImport(null)}>
                 Cancel
               </button>
             </div>
-            <p className="card__subtitle" style={{ marginTop: 8 }}>
-              Merge keeps what you already have and adds anything new. Replace discards current
-              data. A snapshot is taken first either way.
-            </p>
           </div>
         ) : null}
-      </div>
-
-      <div className="card">
-        <h2 className="card__title">How mastery works</h2>
-        <p className="card__subtitle">{MASTERY_EXPLANATION}</p>
-        <p className="card__subtitle" style={{ marginTop: 8 }}>
-          A day counts toward your streak once you finish a session of at least{' '}
-          {MIN_STREAK_QUESTIONS} questions.
-        </p>
       </div>
 
       <div className="card">
@@ -262,17 +329,11 @@ export function SettingsScreen() {
         </div>
         {app.ephemeral ? (
           <p className="card__subtitle" style={{ color: 'var(--danger)', marginTop: 8 }}>
-            No persistent storage is available, so progress will be lost when {APP_NAME} closes.
-          </p>
-        ) : null}
-        {app.fallbacks.length > 0 ? (
-          <p className="card__subtitle" style={{ marginTop: 8 }}>
-            Storage fallbacks: {app.fallbacks.map((f) => `${f.engine} (${f.reason})`).join('; ')}
+            No storage is available, so progress will be lost when the app closes.
           </p>
         ) : null}
         <p className="card__subtitle" style={{ marginTop: 8 }}>
-          {APP_NAME} works entirely offline. It has no account, no server, no adverts and no
-          analytics.
+          Works offline. No account, no server, no ads, no analytics.
         </p>
       </div>
     </div>

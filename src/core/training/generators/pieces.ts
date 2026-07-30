@@ -1,113 +1,40 @@
 /**
- * Feature groups D and E: vision and movement for the other pieces.
+ * Position vision and alignment.
  *
- * All answers are derived from the geometry module or chess.js. Nothing here
- * re-implements movement rules.
+ * What was removed here, and why:
+ *  - "Tap every square a queen/rook/bishop sees on an empty board" — the whole
+ *    board is visible, so the answer is drawn for you. Tedious, not training.
+ *  - "Name the diagonal" and "File and rank" — the same task in other words.
+ *  - Pawn pushes vs captures — a repetitive board-vision card for something
+ *    that appears naturally in notation exercises.
+ *  - The directional coordinate walk ("go up, go left, where are you?") —
+ *    screen-relative language that becomes actively misleading under Black
+ *    orientation, and is not how chess coordinates are used.
+ *
+ * What is kept is sliding-piece vision *in traffic*, where occupancy decides
+ * the answer and the board does not give it away. The geometry functions those
+ * removed drills used are untouched in `core/chess` and still tested.
  */
 
-import {
-  attackedSquares,
-  diagonalsThrough,
-  fileSquares,
-  firstBlockers,
-  geometricTargets,
-  pawnCaptureSquares,
-  pawnPushTargets,
-  rankSquares,
-  sortSquares,
-  BISHOP_DIRECTIONS,
-  QUEEN_DIRECTIONS,
-  ROOK_DIRECTIONS,
-} from '../../chess/geometry';
-import { legalDestinations } from '../../chess/legal';
-import { fenFromOccupancy, occupancyFromPieces } from '../../chess/position';
-import {
-  ALL_SQUARES,
-  rankOf,
-  sameDiagonal,
-  sameFile,
-  sameRank,
-  toCoordinates,
-  toSquareOrNull,
-} from '../../chess/square';
+import { firstBlockers, geometricTargets, BISHOP_DIRECTIONS, QUEEN_DIRECTIONS, ROOK_DIRECTIONS } from '../../chess/geometry';
+import { occupancyFromPieces } from '../../chess/position';
+import { sameDiagonal, sameFile, sameRank } from '../../chess/square';
 import type { PieceColor, PieceType, SquareName } from '../../chess/types';
 import type { Rng } from '../../rng';
 import { buildPool, pickSquare, pickSquareAvoiding } from '../pool';
 import type { GeneratorContext, ModeDefinition, ModeVariant, PieceOnBoard, Question } from '../types';
-import {
-  buildBoard,
-  ensureAnswerable,
-  focusOf,
-  makeQuestion,
-  placementFrom,
-  semanticsLabel,
-  PIECE_NAMES,
-} from './shared';
+import { buildBoard, ensureAnswerable, focusOf, makeQuestion, placementFrom, PIECE_NAMES } from './shared';
 
-const VISION_PIECES: PieceType[] = ['bishop', 'rook', 'queen', 'king', 'pawn'];
+const SLIDERS: PieceType[] = ['bishop', 'rook', 'queen'];
 
-export const PIECE_VISION_VARIANTS: ModeVariant[] = [
-  ...VISION_PIECES.map((piece) => ({
-    id: `${piece}-geometry`,
-    label: `${PIECE_NAMES[piece][0].toUpperCase()}${PIECE_NAMES[piece].slice(1)} sight`,
-    description: `Tap every square a ${PIECE_NAMES[piece]} attacks from its square, ignoring occupancy.`,
-    answerKind: 'square-set' as const,
-    semantics: 'geometry' as const,
-    pieceType: piece,
-  })),
-  ...(['bishop', 'rook', 'queen'] as PieceType[]).map((piece) => ({
-    id: `${piece}-blocked`,
-    label: `${PIECE_NAMES[piece][0].toUpperCase()}${PIECE_NAMES[piece].slice(1)} through traffic`,
-    description: `Tap every square the ${PIECE_NAMES[piece]} can move to with pieces in the way.`,
-    answerKind: 'square-set' as const,
-    semantics: 'legal' as const,
-    pieceType: piece,
-  })),
-  {
-    id: 'diagonal',
-    label: 'Name the diagonal',
-    description: 'Tap every square on the marked diagonal.',
-    answerKind: 'square-set',
-    semantics: 'geometry',
-    pieceType: 'bishop',
-  },
-  {
-    id: 'file-and-rank',
-    label: 'File and rank',
-    description: "Tap every square on the rook's file and rank.",
-    answerKind: 'square-set',
-    semantics: 'geometry',
-    pieceType: 'rook',
-  },
-  {
-    id: 'pawn-moves-vs-captures',
-    label: 'Pushes or captures',
-    description: 'Tap only the squares the pawn can capture on - not where it can push.',
-    answerKind: 'square-set',
-    semantics: 'geometry',
-    pieceType: 'pawn',
-  },
-];
-
-function pieceOfVariant(variantId: string): PieceType {
-  const found = PIECE_VISION_VARIANTS.find((v) => v.id === variantId)?.pieceType;
-  return found ?? 'bishop';
-}
-
-function labelOfVariant(variantId: string): string {
-  return PIECE_VISION_VARIANTS.find((v) => v.id === variantId)?.label ?? 'Piece sight';
-}
-
-/** Pawns cannot stand on the first or last rank. */
-function poolForPiece(context: GeneratorContext, piece: PieceType): SquareName[] {
-  const pool = buildPool(context);
-  if (piece !== 'pawn') return pool;
-  const legal = pool.filter((square) => {
-    const rank = rankOf(square);
-    return rank > 0 && rank < 7;
-  });
-  return legal.length > 0 ? legal : ALL_SQUARES.filter((s) => rankOf(s) > 0 && rankOf(s) < 7);
-}
+export const PIECE_VISION_VARIANTS: ModeVariant[] = SLIDERS.map((piece) => ({
+  id: `${piece}-blocked`,
+  label: `${PIECE_NAMES[piece][0].toUpperCase()}${PIECE_NAMES[piece].slice(1)}`,
+  description: `Where can the ${PIECE_NAMES[piece]} actually go with pieces in the way?`,
+  answerKind: 'square-set' as const,
+  semantics: 'legal' as const,
+  pieceType: piece,
+}));
 
 function scatterOnRays(
   origin: SquareName,
@@ -116,7 +43,7 @@ function scatterOnRays(
   moverColor: PieceColor,
 ): PieceOnBoard[] {
   const reachable = geometricTargets({ type: piece, color: moverColor }, origin);
-  const count = rng.nextIntBetween(2, Math.min(4, Math.max(2, reachable.length)));
+  const count = rng.nextIntBetween(3, Math.min(6, Math.max(3, reachable.length)));
   return rng.sample(reachable, count).map((square) => ({
     square,
     color: rng.chance(0.5) ? moverColor : moverColor === 'white' ? 'black' : 'white',
@@ -131,141 +58,34 @@ export function generatePieceVisionQuestion(
 ): Question {
   const seed = rng.nextInt(0x7fffffff);
   const color: PieceColor = 'white';
+  const piece = (SLIDERS.find((p) => variantId.startsWith(p)) ?? 'bishop') as PieceType;
+  const origin = pickSquare(buildPool(context), rng, context.weights);
 
-  if (variantId === 'diagonal') {
-    const origin = pickSquare(poolForPiece(context, 'bishop'), rng, context.weights);
-    const [rising, falling] = diagonalsThrough(origin);
-    const chosen = (rising as SquareName[]).length >= (falling as SquareName[]).length ? rising : falling;
-    const answer = sortSquares((chosen as SquareName[]).filter((square) => square !== origin));
-
-    return makeQuestion({
-      modeId: 'piece-vision',
-      variantId,
-      variantLabel: labelOfVariant(variantId),
-      prompt: {
-        text: `Tap every other square on the diagonal through ${origin}`,
-        detail: 'One diagonal only - the longer one',
-        coordinate: origin,
-      },
-      board: buildBoard(context, {
-        fen: placementFrom([{ square: origin, type: 'bishop', color }]),
-        highlights: [origin],
-      }),
-      expected: { kind: 'square-set', squares: answer },
-      semantics: 'geometry',
-      focusSquares: focusOf(origin, answer),
-      primarySquare: origin,
-      seed,
+  const targetsWith = (blockers: readonly PieceOnBoard[]): SquareName[] =>
+    geometricTargets({ type: piece, color }, origin, {
+      occupancy: occupancyFromPieces([{ square: origin, type: piece, color }, ...blockers]),
     });
-  }
 
-  if (variantId === 'file-and-rank') {
-    const origin = pickSquare(poolForPiece(context, 'rook'), rng, context.weights);
-    const answer = sortSquares(
-      [...fileSquares(origin), ...rankSquares(origin)].filter((square) => square !== origin),
-    );
-
-    return makeQuestion({
-      modeId: 'piece-vision',
-      variantId,
-      variantLabel: labelOfVariant(variantId),
-      prompt: {
-        text: `Tap every square on the file and rank through ${origin}`,
-        coordinate: origin,
-      },
-      board: buildBoard(context, {
-        fen: placementFrom([{ square: origin, type: 'rook', color }]),
-        highlights: [origin],
-      }),
-      expected: { kind: 'square-set', squares: answer },
-      semantics: 'geometry',
-      focusSquares: focusOf(origin, answer),
-      primarySquare: origin,
-      seed,
-    });
-  }
-
-  if (variantId === 'pawn-moves-vs-captures') {
-    const origin = pickSquare(poolForPiece(context, 'pawn'), rng, context.weights);
-    const captures = pawnCaptureSquares(origin, color);
-    const pushes = pawnPushTargets(origin, color);
-
-    return makeQuestion({
-      modeId: 'piece-vision',
-      variantId,
-      variantLabel: labelOfVariant(variantId),
-      prompt: {
-        text: 'Tap only the squares this pawn could capture on',
-        detail: 'Captures are diagonal - pushes are not captures',
-      },
-      board: buildBoard(context, {
-        fen: placementFrom([{ square: origin, type: 'pawn', color }]),
-        highlights: [origin],
-      }),
-      expected: { kind: 'square-set', squares: captures },
-      semantics: 'geometry',
-      focusSquares: focusOf(origin, captures, pushes),
-      primarySquare: origin,
-      seed,
-    });
-  }
-
-  if (variantId.endsWith('-blocked')) {
-    const piece = pieceOfVariant(variantId);
-    const origin = pickSquare(poolForPiece(context, piece), rng, context.weights);
-
-    const targetsWith = (blockers: readonly PieceOnBoard[]): SquareName[] =>
-      geometricTargets({ type: piece, color }, origin, {
-        occupancy: occupancyFromPieces([{ square: origin, type: piece, color }, ...blockers]),
-      });
-
-    // Friendly blockers can seal a piece in completely; drop them until the
-    // question has an answer.
-    const blockers = ensureAnswerable(
-      scatterOnRays(origin, piece, rng, color),
-      (candidate) => targetsWith(candidate).length > 0,
-    );
-    const answer = targetsWith(blockers);
-
-    return makeQuestion({
-      modeId: 'piece-vision',
-      variantId,
-      variantLabel: labelOfVariant(variantId),
-      prompt: {
-        text: `Tap every square the ${PIECE_NAMES[piece]} can move to`,
-        detail: 'Your own pieces block; enemy pieces can be captured',
-      },
-      board: buildBoard(context, {
-        fen: placementFrom([{ square: origin, type: piece, color }, ...blockers]),
-        highlights: [origin],
-      }),
-      expected: { kind: 'square-set', squares: answer },
-      semantics: 'legal',
-      focusSquares: focusOf(origin, answer),
-      primarySquare: origin,
-      seed,
-    });
-  }
-
-  // "<piece>-geometry"
-  const piece = pieceOfVariant(variantId);
-  const origin = pickSquare(poolForPiece(context, piece), rng, context.weights);
-  const answer = attackedSquares({ type: piece, color }, origin);
+  const blockers = ensureAnswerable(
+    scatterOnRays(origin, piece, rng, color),
+    (candidate) => targetsWith(candidate).length > 0,
+  );
+  const answer = targetsWith(blockers);
 
   return makeQuestion({
     modeId: 'piece-vision',
-    variantId,
-    variantLabel: labelOfVariant(variantId),
+    variantId: `${piece}-blocked`,
+    variantLabel: PIECE_VISION_VARIANTS.find((v) => v.pieceType === piece)?.label ?? 'Piece vision',
     prompt: {
-      text: `Tap every square the ${PIECE_NAMES[piece]} attacks`,
-      detail: semanticsLabel('geometry'),
+      text: `Tap every square the ${PIECE_NAMES[piece]} can move to`,
+      detail: 'Your own pieces block; enemy pieces can be captured',
     },
     board: buildBoard(context, {
-      fen: placementFrom([{ square: origin, type: piece, color }]),
+      fen: placementFrom([{ square: origin, type: piece, color }, ...blockers]),
       highlights: [origin],
     }),
     expected: { kind: 'square-set', squares: answer },
-    semantics: 'geometry',
+    semantics: 'legal',
     focusSquares: focusOf(origin, answer),
     primarySquare: origin,
     seed,
@@ -274,80 +94,18 @@ export function generatePieceVisionQuestion(
 
 export const pieceVisionMode: ModeDefinition = {
   id: 'piece-vision',
-  title: 'Piece vision',
-  summary: 'Bishops, rooks, queens, kings and pawns.',
+  title: 'Sliding pieces in traffic',
+  summary: 'Where a bishop, rook or queen can actually go.',
   description:
-    'Board vision for every piece except the knight, which has its own mode. Includes diagonals, files and ranks, blocked rays, and the difference between a pawn push and a pawn capture.',
+    'A sliding piece is surrounded by other pieces. Tap only the squares it can really reach - your own pieces block, enemy pieces can be captured.',
+  category: 'position',
   variants: PIECE_VISION_VARIANTS,
-  supportedLayouts: ['empty', 'custom'],
+  supportedLayouts: ['custom'],
   generate: generatePieceVisionQuestion,
 };
 
 /* ------------------------------------------------------------------ *
- * Alignment: do two squares share a rank, file or diagonal?
- * ------------------------------------------------------------------ */
-
-const ALIGNMENT_CHOICES = ['Same rank', 'Same file', 'Same diagonal', 'None of these'];
-
-export function generateAlignmentQuestion(
-  context: GeneratorContext,
-  rng: Rng,
-  variantId: string,
-): Question {
-  const seed = rng.nextInt(0x7fffffff);
-  const pool = buildPool(context);
-  const first = pickSquare(pool, rng, context.weights);
-  const second = pickSquareAvoiding(pool, [first], rng, context.weights);
-
-  const correct = sameRank(first, second)
-    ? 'Same rank'
-    : sameFile(first, second)
-      ? 'Same file'
-      : sameDiagonal(first, second)
-        ? 'Same diagonal'
-        : 'None of these';
-
-  return makeQuestion({
-    modeId: 'alignment',
-    variantId,
-    variantLabel: 'Alignment',
-    prompt: {
-      text: `How are ${first} and ${second} related?`,
-      detail: 'Rank, file, diagonal, or none',
-    },
-    board: buildBoard(context, {
-      fen: placementFrom([]),
-      highlights: [first, second],
-    }),
-    expected: { kind: 'choice', choices: ALIGNMENT_CHOICES, correct },
-    semantics: 'geometry',
-    focusSquares: focusOf(first, second),
-    primarySquare: first,
-    seed,
-  });
-}
-
-export const alignmentMode: ModeDefinition = {
-  id: 'alignment',
-  title: 'Alignment',
-  summary: 'Do two squares share a rank, file or diagonal?',
-  description:
-    'Two squares are highlighted and you say how they relate. Seeing alignment instantly is what lets you spot pins, skewers and batteries.',
-  variants: [
-    {
-      id: 'standard',
-      label: 'Alignment',
-      description: 'Rank, file, diagonal or none.',
-      answerKind: 'choice',
-      semantics: 'geometry',
-    },
-  ],
-  supportedLayouts: ['empty'],
-  generate: generateAlignmentQuestion,
-};
-
-/* ------------------------------------------------------------------ *
- * Blockers: which square stops each ray?
+ * First blocker
  * ------------------------------------------------------------------ */
 
 export function generateBlockerQuestion(
@@ -391,7 +149,8 @@ export const blockerMode: ModeDefinition = {
   title: 'First blocker',
   summary: 'Which piece stops each ray?',
   description:
-    'A sliding piece is surrounded by traffic. Tap the first piece it meets along each of its directions - the squares that decide what it actually controls.',
+    'Tap the first piece a slider meets along each direction - the squares that decide what it actually controls.',
+  category: 'position',
   variants: [
     { id: 'rook', label: 'Rook', description: 'Four directions.', answerKind: 'square-set', semantics: 'geometry', pieceType: 'rook' },
     { id: 'bishop', label: 'Bishop', description: 'Four diagonals.', answerKind: 'square-set', semantics: 'geometry', pieceType: 'bishop' },
@@ -402,170 +161,66 @@ export const blockerMode: ModeDefinition = {
 };
 
 /* ------------------------------------------------------------------ *
- * Sequence: follow a short walk and name the final square.
+ * Alignment - answered from coordinates, with no board to read it off.
  * ------------------------------------------------------------------ */
 
-const STEP_WORDS: Array<{ label: string; df: number; dr: number }> = [
-  { label: 'up', df: 0, dr: 1 },
-  { label: 'down', df: 0, dr: -1 },
-  { label: 'left', df: -1, dr: 0 },
-  { label: 'right', df: 1, dr: 0 },
-  { label: 'up-right', df: 1, dr: 1 },
-  { label: 'up-left', df: -1, dr: 1 },
-  { label: 'down-right', df: 1, dr: -1 },
-  { label: 'down-left', df: -1, dr: -1 },
-];
+const ALIGNMENT_CHOICES = ['Same rank', 'Same file', 'Same diagonal', 'None'];
 
-/**
- * Builds the walk by stepping square by square, discarding any step that
- * would leave the board. The destination is therefore always valid, which is
- * what the "every generator returns a valid answer" test checks.
- */
-export function generateSequenceQuestion(
+export function generateAlignmentQuestion(
   context: GeneratorContext,
   rng: Rng,
   variantId: string,
 ): Question {
+  void variantId;
   const seed = rng.nextInt(0x7fffffff);
-  const blindfold = variantId === 'blindfold';
-  const stepCount = variantId === 'long' ? 4 : 3;
+  const pool = buildPool(context);
+  const first = pickSquare(pool, rng, context.weights);
+  const second = pickSquareAvoiding(pool, [first], rng, context.weights);
 
-  let current = pickSquare(buildPool(context), rng, context.weights);
-  const origin = current;
-  const steps: string[] = [];
-
-  for (let i = 0; i < stepCount; i += 1) {
-    const options = rng.shuffle(STEP_WORDS);
-    const usable = options.find((step) => {
-      const { file, rank } = toCoordinates(current);
-      return toSquareOrNull(file + step.df, rank + step.dr) !== null;
-    });
-    if (usable === undefined) break;
-    const { file, rank } = toCoordinates(current);
-    current = toSquareOrNull(file + usable.df, rank + usable.dr) as SquareName;
-    steps.push(usable.label);
-  }
+  const correct = sameRank(first, second)
+    ? 'Same rank'
+    : sameFile(first, second)
+      ? 'Same file'
+      : sameDiagonal(first, second)
+        ? 'Same diagonal'
+        : 'None';
 
   return makeQuestion({
-    modeId: 'sequence',
-    variantId,
-    variantLabel: blindfold ? 'Blindfold walk' : 'Coordinate walk',
-    prompt: {
-      text: `Start on ${origin}, then go ${steps.join(', ')}. Where do you land?`,
-      detail: blindfold ? 'No board - track it in your head' : 'One square per step',
-      coordinate: origin,
-    },
+    modeId: 'alignment',
+    variantId: 'standard',
+    variantLabel: 'Alignment',
+    prompt: { text: `${first} and ${second}` },
     board: buildBoard(context, {
       fen: placementFrom([]),
-      highlights: blindfold ? [] : [origin],
-      hidden: blindfold,
+      highlights: [],
+      // Drawing both squares would answer the question visually.
+      hidden: true,
     }),
-    expected: { kind: 'coordinate', square: current },
+    expected: { kind: 'choice', choices: ALIGNMENT_CHOICES, correct },
     semantics: 'geometry',
-    focusSquares: focusOf(origin, current),
-    primarySquare: current,
+    focusSquares: focusOf(first, second),
+    primarySquare: first,
     seed,
   });
 }
 
-export const sequenceMode: ModeDefinition = {
-  id: 'sequence',
-  title: 'Coordinate walk',
-  summary: 'Follow a short path and name where you land.',
+export const alignmentMode: ModeDefinition = {
+  id: 'alignment',
+  title: 'Alignment',
+  summary: 'Do two squares share a rank, file or diagonal?',
   description:
-    'You are given a starting square and a few steps. Track the walk and name the final square. The blindfold variant hides the board entirely.',
+    'Two coordinates are named with no board shown. Seeing alignment instantly is what lets you spot pins, skewers and batteries.',
+  category: 'coordinates',
   variants: [
-    { id: 'standard', label: 'Three steps', description: 'Board visible.', answerKind: 'coordinate', semantics: 'geometry' },
-    { id: 'long', label: 'Four steps', description: 'A longer walk.', answerKind: 'coordinate', semantics: 'geometry' },
-    { id: 'blindfold', label: 'Blindfold', description: 'No board at all.', answerKind: 'coordinate', semantics: 'geometry' },
+    {
+      id: 'standard',
+      label: 'Rank, file or diagonal',
+      description: 'Answer from the coordinates alone.',
+      answerKind: 'choice',
+      semantics: 'geometry',
+    },
   ],
   supportedLayouts: ['empty'],
-  generate: generateSequenceQuestion,
-};
-
-/* ------------------------------------------------------------------ *
- * Feature group E: move a piece to a named legal destination.
- * ------------------------------------------------------------------ */
-
-const MOVEMENT_PIECES: PieceType[] = ['knight', 'bishop', 'rook', 'queen', 'king'];
-
-export function generateMovementQuestion(
-  context: GeneratorContext,
-  rng: Rng,
-  variantId: string,
-): Question {
-  const seed = rng.nextInt(0x7fffffff);
-  const piece: PieceType = (MOVEMENT_PIECES.find((p) => p === variantId) ?? rng.pick(MOVEMENT_PIECES));
-  const color: PieceColor = 'white';
-
-  const origin = pickSquare(buildPool(context), rng, context.weights);
-  const mover: PieceOnBoard = { square: origin, type: piece, color };
-
-  // Kings are placed far away so chess.js accepts the position and the mover
-  // is never pinned; the target then comes from chess.js itself.
-  const kingSquares = ALL_SQUARES.filter((square) => {
-    const df = Math.abs(square.charCodeAt(0) - origin.charCodeAt(0));
-    const dr = Math.abs(Number(square[1]) - Number(origin[1]));
-    return Math.max(df, dr) > 2;
-  });
-  const whiteKingSquare = piece === 'king' ? null : (kingSquares[0] as SquareName);
-  const blackKingSquare = kingSquares.filter((square) => {
-    if (whiteKingSquare === null) return true;
-    const df = Math.abs(square.charCodeAt(0) - whiteKingSquare.charCodeAt(0));
-    const dr = Math.abs(Number(square[1]) - Number(whiteKingSquare[1]));
-    return Math.max(df, dr) > 2;
-  })[0] as SquareName;
-
-  const pieces: PieceOnBoard[] = [mover];
-  if (whiteKingSquare !== null) pieces.push({ square: whiteKingSquare, type: 'king', color: 'white' });
-  pieces.push({ square: blackKingSquare, type: 'king', color: 'black' });
-
-  const fen = fenFromOccupancy(occupancyFromPieces(pieces), { turn: 'white' });
-  let destinations: SquareName[] = [];
-  try {
-    destinations = legalDestinations(fen, origin);
-  } catch {
-    destinations = [];
-  }
-  const fallback = geometricTargets({ type: piece, color }, origin);
-  const target = destinations.length > 0 ? rng.pick(destinations) : rng.pick(fallback);
-
-  return makeQuestion({
-    modeId: 'piece-movement',
-    variantId: piece,
-    variantLabel: `Move the ${PIECE_NAMES[piece]}`,
-    prompt: {
-      text: `Move the ${PIECE_NAMES[piece]} to ${target}`,
-      detail: 'Drag it, or tap the piece then the square',
-      coordinate: target,
-    },
-    board: buildBoard(context, {
-      fen: placementFrom(pieces),
-      highlights: [],
-      showHints: context.showHints ?? false,
-    }),
-    expected: { kind: 'move', from: origin, to: target },
-    semantics: 'legal',
-    focusSquares: focusOf(origin, target),
-    primarySquare: target,
-    seed,
-  });
-}
-
-export const pieceMovementMode: ModeDefinition = {
-  id: 'piece-movement',
-  title: 'Move the piece',
-  summary: 'Drag or tap a piece to a named square.',
-  description:
-    'A piece and a target square are given. Move it there by dragging, or by tapping the piece and then the square. Illegal attempts snap back.',
-  variants: MOVEMENT_PIECES.map((piece) => ({
-    id: piece,
-    label: `${PIECE_NAMES[piece][0].toUpperCase()}${PIECE_NAMES[piece].slice(1)}`,
-    description: `Move a ${PIECE_NAMES[piece]} to the named square.`,
-    answerKind: 'move' as const,
-    semantics: 'legal' as const,
-    pieceType: piece,
-  })),
-  supportedLayouts: ['custom'],
-  generate: generateMovementQuestion,
+  supportsHideBoard: false,
+  generate: generateAlignmentQuestion,
 };

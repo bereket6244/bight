@@ -513,8 +513,9 @@ describe('board settings reach the board', () => {
     expect(container.querySelectorAll('.square-label')).toHaveLength(0);
   });
 
-  it('hides the board entirely in the blindfold variant', async () => {
-    renderSession({ modeId: 'memory-square-to-coordinate', variantId: 'blindfold' });
+  it('hides the board when the hide-board setting is on', async () => {
+    // Blindfold practice is a setting now, not a separate mode card.
+    renderSession({ modeId: 'square-to-coordinate', variantId: 'standard', hideBoard: true });
     await screen.findByTestId('session-screen');
     expect(screen.getByText(/answer from memory/i)).toBeInTheDocument();
   });
@@ -544,7 +545,7 @@ describe('settings screen', () => {
     await screen.findByTestId('home-screen');
     await user.click(screen.getByTestId('tab-settings'));
 
-    const sound = await screen.findByTestId('setting-sound');
+    const sound = await screen.findByTestId('setting-sound-effects');
     expect(sound).toBeChecked();
     await user.click(sound);
     await waitFor(() => expect(sound).not.toBeChecked());
@@ -571,7 +572,7 @@ describe('settings screen', () => {
     const message = await screen.findByRole('status');
     expect(message.className).toContain('feedback--wrong');
     // No confirmation dialog appeared, so nothing could have been imported.
-    expect(screen.queryByText('Replace everything')).not.toBeInTheDocument();
+    expect(screen.queryByText('Replace')).not.toBeInTheDocument();
   });
 
   it('previews a valid backup and asks before importing', async () => {
@@ -603,7 +604,7 @@ describe('settings screen', () => {
 
     expect(await screen.findByText('Import this backup?')).toBeInTheDocument();
     expect(screen.getByText('Merge')).toBeInTheDocument();
-    expect(screen.getByText('Replace everything')).toBeInTheDocument();
+    expect(screen.getByText('Replace')).toBeInTheDocument();
   });
 });
 

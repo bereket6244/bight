@@ -8,12 +8,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import {
-  attackedSquares,
-  geometricTargets,
-  knightTargets,
-  sortSquares,
-} from '../chess/geometry';
+import { geometricTargets, knightTargets, sortSquares } from '../chess/geometry';
 import { isValidKnightRoute, knightDistance } from '../chess/knightRoute';
 import { occupancyFromFen } from '../chess/position';
 import { ALL_SQUARES, isSquareName, squareColor } from '../chess/square';
@@ -56,6 +51,13 @@ function perfectAnswer(question: Question): SubmittedAnswer {
 
 const SEEDS = [1, 2, 3, 7, 11, 42, 99, 1234, 20260730, 987654];
 
+/**
+ * Seeds for the sweeps that run every mode and variant. Notation questions
+ * generate real games, so the full seed list there costs a minute for no extra
+ * coverage - each of these still exercises every registered variant.
+ */
+const CONTRACT_SEEDS = SEEDS.slice(0, 4);
+
 describe('generator contract', () => {
   it('covers every mode in the registry', () => {
     expect(MODES.length).toBeGreaterThanOrEqual(11);
@@ -67,7 +69,7 @@ describe('generator contract', () => {
 
   it('produces a well-formed question for every mode, variant and seed', () => {
     for (const { mode, variant } of allModeVariants()) {
-      for (const seed of SEEDS) {
+      for (const seed of CONTRACT_SEEDS) {
         const rng = createRng(seed);
         const question = mode.generate(context(), rng, variant.id);
         const where = `${mode.id}/${variant.id}/seed ${seed}`;
@@ -90,7 +92,7 @@ describe('generator contract', () => {
 
   it('never generates an off-board or duplicated answer square', () => {
     for (const { mode, variant } of allModeVariants()) {
-      for (const seed of SEEDS) {
+      for (const seed of CONTRACT_SEEDS) {
         const question = mode.generate(context(), createRng(seed), variant.id);
         const where = `${mode.id}/${variant.id}/seed ${seed}`;
         const expected = question.expected;
@@ -117,7 +119,7 @@ describe('generator contract', () => {
 
   it('always produces at least one correct answer where one is required', () => {
     for (const { mode, variant } of allModeVariants()) {
-      for (const seed of SEEDS) {
+      for (const seed of CONTRACT_SEEDS) {
         const question = mode.generate(context(), createRng(seed), variant.id);
         const where = `${mode.id}/${variant.id}/seed ${seed}`;
         const expected = question.expected;
@@ -142,7 +144,7 @@ describe('generator contract', () => {
 
   it('grades its own perfect answer as correct', () => {
     for (const { mode, variant } of allModeVariants()) {
-      for (const seed of SEEDS) {
+      for (const seed of CONTRACT_SEEDS) {
         const question = mode.generate(context(), createRng(seed), variant.id);
         const grade = gradeQuestion(question, perfectAnswer(question));
         expect(grade.correct, `${mode.id}/${variant.id}/seed ${seed}: ${grade.explanation}`).toBe(
@@ -210,18 +212,6 @@ describe('answers agree with the chess core', () => {
     }
   });
 
-  it('geometry-with-pieces answers ignore occupancy entirely', () => {
-    const knight = MODES.find((m) => m.id === 'knight-vision');
-    for (const seed of SEEDS) {
-      const question = knight!.generate(context(), createRng(seed), 'geometry-with-pieces');
-      const origin = question.primarySquare as SquareName;
-      const expected = question.expected as { kind: 'square-set'; squares: SquareName[] };
-      expect(expected.squares).toEqual(knightTargets(origin));
-      // There really are other pieces on the board.
-      expect(occupancyFromFen(question.board.fen).size).toBeGreaterThan(1);
-    }
-  });
-
   it('square-colour answers match the parity rule', () => {
     const mode = MODES.find((m) => m.id === 'square-color');
     for (const variant of mode!.variants) {
@@ -236,22 +226,26 @@ describe('answers agree with the chess core', () => {
     }
   });
 
-  it('piece vision answers match attackedSquares', () => {
+  it('sliding-piece answers respect blockers', () => {
     const mode = MODES.find((m) => m.id === 'piece-vision');
-    for (const piece of ['bishop', 'rook', 'queen', 'king', 'pawn'] as const) {
+    for (const piece of ['bishop', 'rook', 'queen'] as const) {
       for (const seed of SEEDS) {
-        const question = mode!.generate(context(), createRng(seed), `${piece}-geometry`);
+        const question = mode!.generate(context(), createRng(seed), `${piece}-blocked`);
         const origin = question.primarySquare as SquareName;
+        const occupancy = occupancyFromFen(question.board.fen);
         const expected = question.expected as { kind: 'square-set'; squares: SquareName[] };
+
         expect(expected.squares, `${piece} on ${origin}`).toEqual(
-          attackedSquares({ type: piece, color: 'white' }, origin),
+          geometricTargets({ type: piece, color: 'white' }, origin, { occupancy }),
         );
+        // Occupancy must actually matter, or the drill is empty-board collection.
+        expect(occupancy.size).toBeGreaterThan(1);
       }
     }
   });
 
   it('knight route answers are genuinely shortest', () => {
-    const knight = MODES.find((m) => m.id === 'knight-vision');
+    const knight = MODES.find((m) => m.id === 'knight-route');
     for (const seed of SEEDS) {
       const question = knight!.generate(context(), createRng(seed), 'shortest-route');
       const expected = question.expected as {
@@ -267,28 +261,6 @@ describe('answers agree with the chess core', () => {
     }
   });
 
-  it('sequence answers land on the square the walk describes', () => {
-    const mode = MODES.find((m) => m.id === 'sequence');
-    for (const seed of SEEDS) {
-      const question = mode!.generate(context(), createRng(seed), 'standard');
-      const expected = question.expected as { kind: 'coordinate'; square: SquareName };
-      expect(ALL_SQUARES).toContain(expected.square);
-      expect(question.prompt.text).toMatch(/^Start on [a-h][1-8]/);
-    }
-  });
-
-  it('pawn capture variant never includes a push square', () => {
-    const mode = MODES.find((m) => m.id === 'piece-vision');
-    for (const seed of SEEDS) {
-      const question = mode!.generate(context(), createRng(seed), 'pawn-moves-vs-captures');
-      const origin = question.primarySquare as SquareName;
-      const expected = question.expected as { kind: 'square-set'; squares: SquareName[] };
-      const file = origin[0];
-      for (const square of expected.squares) {
-        expect(square[0], `${origin} -> ${square} is a push, not a capture`).not.toBe(file);
-      }
-    }
-  });
 });
 
 describe('filters restrict the squares questions are drawn from', () => {
@@ -371,15 +343,15 @@ describe('board settings flow into the generated board', () => {
     expect(occupancyFromFen(question.board.fen).size).toBe(32);
   });
 
-  it('passes the reveal duration to memory variants', () => {
-    const mode = MODES.find((m) => m.id === 'memory-square-to-coordinate');
+  it('passes the reveal duration through as a setting, not a separate mode', () => {
+    const mode = MODES.find((m) => m.id === 'square-to-coordinate');
     const question = mode!.generate(context({ revealMs: 400 }), createRng(3), 'standard');
     expect(question.board.revealMs).toBe(400);
   });
 
-  it('hides the board in blindfold variants', () => {
-    const mode = MODES.find((m) => m.id === 'memory-square-to-coordinate');
-    const question = mode!.generate(context(), createRng(3), 'blindfold');
+  it('hides the board when the hideBoard setting is on', () => {
+    const mode = MODES.find((m) => m.id === 'square-to-coordinate');
+    const question = mode!.generate(context({ hideBoard: true }), createRng(3), 'standard');
     expect(question.board.hidden).toBe(true);
   });
 });
