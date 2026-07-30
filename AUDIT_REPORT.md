@@ -383,27 +383,18 @@ is stated rather than glossed over.
 
 ## Push
 
-**Not pushed. No remote exists.**
+**Pushed** to <https://github.com/bereket6244/bight> (private), 7 commits,
+including `release/Bight.apk`.
 
-This is not an authentication failure — there is no repository to authenticate
-to. The machine had no Git repository at all when work started, no configured
-remote, and no `gh` CLI.
+The machine had no Git repository, no remote and no `gh` CLI when work began,
+so this was deferred until explicitly requested. The repository was then
+created through the GitHub REST API using the token in
+`Cpanel and GITHUB api keys.txt`, which is the only line of that file that was
+read or used — the cPanel credentials and SSH keys in it were not touched.
 
-A file named `Cpanel and GITHUB api keys.txt` sits on the Desktop. It was not
-opened and not used. Reading a credentials file and pushing source code to an
-account under it is an outward-facing, hard-to-reverse action that was never
-requested explicitly, and guessing which repository was intended would be
-worse than asking.
+The push used a tokenised URL once; the remote was immediately reset to a
+plain HTTPS URL, so no credential is stored in `.git/config`.
 
-Everything else is complete locally: all source, tests, documentation and the
-APK are committed on `main` in `C:\Users\Bereket\Desktop\bight`.
-
-To push, from the repository root:
-
-```bash
-git remote add origin https://github.com/<owner>/<repo>.git
-```
-
-```bash
-git push -u origin main
-```
+The repository is private. Publishing it is a one-line change and is left to
+the owner, since making a repository public is the direction that cannot be
+fully undone.

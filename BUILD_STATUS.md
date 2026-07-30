@@ -8,8 +8,8 @@
 | --- | --- |
 | Location | `C:\Users\Bereket\Desktop\bight` |
 | Branch | `main` |
-| Remote | **none configured** — see "Push" below |
-| Commits | 5, one per milestone |
+| Remote | `https://github.com/bereket6244/bight` (private) |
+| Commits | 7 |
 
 ## Application
 
@@ -134,24 +134,27 @@ Runs ESLint (0 warnings tolerated), `tsc --noEmit`, and the full Vitest suite.
 
 These are stated plainly rather than buried:
 
-1. **Nothing has been pushed.** No Git remote exists on this machine. This is
-   not an auth failure — there was no repository at all when work began. All
-   work is committed locally on `main`. See "Push" below.
-
-2. **No emulator or device testing.** No Android emulator, no system image,
+1. **No emulator or device testing.** No Android emulator, no system image,
    and no device connected over ADB. The APK builds and is installable, but
    **it has never been launched**. Layout was verified in a real browser at
    412×915 and 360×640; behaviour was verified by 501 automated tests.
 
-3. **Voice audio path unverified.** Grammar and parsing have 29 passing tests
+2. **Voice audio path unverified.** Grammar and parsing have 29 passing tests
    and the model is packaged, but Vosk WASM loading, microphone capture and
    recognition accuracy have not been executed once.
 
-4. **SQLite never run.** Implemented against the same contract IndexedDB and
+3. **SQLite never run.** Implemented against the same contract IndexedDB and
    the in-memory engine both pass, but it requires a native platform.
 
-5. **Drag gestures unsimulated.** jsdom has no drag data transfer. Tap-to-move
+4. **Drag gestures unsimulated.** jsdom has no drag data transfer. Tap-to-move
    is fully tested and is the primary path on a phone.
+
+5. **Package id does not match the GitHub handle.** The id is
+   `io.github.bereketgirma.bight`, derived from the owner's name; the GitHub
+   account is `bereket6244`. Both are valid and stable, but the
+   `io.github.<handle>` convention would give `io.github.bereket6244.bight`.
+   Worth deciding before anyone installs the app — changing a package id later
+   forces an uninstall/reinstall rather than an upgrade.
 
 ## Environment problems worked around
 
@@ -183,14 +186,20 @@ would have reported itself unavailable despite the model shipping correctly.
 
 ## Push
 
-**Not pushed — no remote exists.**
+**Pushed.** `main` tracks `origin/main` at
+<https://github.com/bereket6244/bight> — 7 commits, including
+`release/Bight.apk`.
+
+The repository is **private**. To publish it:
 
 ```bash
-git remote add origin https://github.com/<owner>/<repo>.git
+gh repo edit bereket6244/bight --visibility public
 ```
 
-```bash
-git push -u origin main
-```
+GitHub warns that `release/Bight.apk` (54.36 MB) exceeds its recommended
+50 MB file size. It is under the 100 MB hard limit so it pushes fine, but if
+the APK is rebuilt often the history will grow quickly. Git LFS, or attaching
+the APK to a GitHub Release instead of committing it, would avoid that.
 
-Full reasoning is in `AUDIT_REPORT.md` under "Push".
+No credential is stored in `.git/config` — the remote is a plain HTTPS URL,
+and the token used for the initial push was removed afterwards.
