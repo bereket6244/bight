@@ -1,0 +1,56 @@
+{
+  "name": "bight",
+  "version": "1.0.0",
+  "description": "Bight - board sight. An offline chess coordinate and board-vision trainer.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "lint": "eslint . --max-warnings 0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest run --reporter=verbose",
+    "cap:sync": "cap sync android",
+    "android:build": "cap sync android && node scripts/gradle.mjs assembleDebug",
+    "verify": "npm run lint && npm run test"
+  },
+  "dependencies": {
+    "@capacitor-community/sqlite": "^6.0.2",
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/filesystem": "^6.0.2",
+    "@capacitor/haptics": "^6.0.2",
+    "@capacitor/preferences": "^6.0.3",
+    "@capacitor/share": "^6.0.3",
+    "@capacitor/status-bar": "^6.0.2",
+    "chess.js": "^1.0.0-beta.8",
+    "chessground": "^9.1.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0",
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.0.1",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@typescript-eslint/eslint-plugin": "^8.15.0",
+    "@typescript-eslint/parser": "^8.15.0",
+    "@vitejs/plugin-react": "^4.3.3",
+    "eslint": "^8.57.1",
+    "eslint-plugin-react-hooks": "^4.6.2",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.5"
+  },
+  "engines": {
+    "node": ">=18.18.0"
+  }
+}

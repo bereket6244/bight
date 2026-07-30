@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+*.local
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Test / coverage
+coverage/
+.vitest/
+
+# Android build artifacts (the shipped APK is force-added under release/)
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/captures/
+android/app/release/
+*.iml
+.gradle/
+
+# Capacitor copies the web build into the Android project at sync time
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+
+# Signing material - never commit private keys
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+
+# Machine-specific SDK paths
+local.properties
+
+# Vosk speech models are downloaded by scripts/fetch-voice-model.mjs
+public/models/vosk-*/
+public/models/*.zip
+public/models/*.tar.gz
