@@ -7,7 +7,7 @@
 | | |
 | --- | --- |
 | Location | `C:\Users\Bereket\Desktop\bight` |
-| Branch | `second-pass` |
+| Branch | `main` (the only branch) |
 | Remote | `https://github.com/bereket6244/bight` (private) |
 | Commits | 10 |
 
@@ -191,10 +191,13 @@ would have reported itself unavailable despite the model shipping correctly.
 
 ## Push
 
-**Pushed.** The second pass is on the `second-pass` branch at
+**Pushed.** The second pass was fast-forwarded into `main` at
 <https://github.com/bereket6244/bight>, including a rebuilt
-`release/Bight.apk`. `main` still holds the first release, so the two can be
-compared before merging.
+`release/Bight.apk`. The `second-pass` branch has been deleted; `main` is now
+the only branch, local and remote.
+
+No history was rewritten — the merge was a fast-forward and the push was not
+forced, so every commit from both passes is intact and reachable from `main`.
 
 The repository is **private**. To publish it:
 
