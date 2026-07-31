@@ -29,6 +29,8 @@ src/core/storage/     Repository contract + SQLite/IndexedDB/memory engines.
 src/core/backup/      Versioned JSON backup, validation, migrations.
 src/core/dev/         Development-only diagnostics. Gated out of production.
 src/services/         Speech, haptics, sound, voice recognition.
+src/services/engine/  Stockfish behind one interface (engine branch only).
+src/core/engineGame/  The engine game, with chess.js as the only authority.
 src/ui/               React screens and components.
 scripts/              Build, icon, version, setup and inspection tooling.
 ```
@@ -138,6 +140,158 @@ Three separate capabilities, and they must stay separate:
 actually opened. Never report readiness from model presence alone — that was a
 real shipped bug. See `src/services/voice/state.ts`.
 
+## Blindfold training
+
+Full detail in `BLINDFOLD_TRAINING.md`. What an agent needs before touching it:
+
+### Modes
+
+| Mode id | Card |
+| --- | --- |
+| `blindfold-tracking` | Track a Position |
+| `blindfold-reconstruction` | Reconstruct a Position |
+| `blindfold-progressive` | Progressive Blindfold |
+| `blindfold-engine-game` | Blindfold vs Computer (engine branch only) |
+
+Variants live in **setup pages**, never as extra cards. The guards in
+`secondPass.test.ts` cap cards per category and variants per mode; when one
+fires, that is the guard working, not an obstacle to route around.
+
+### Sequences
+
+`core/chess/sequence.ts` generates legal move sequences and then **replays them
+through a fresh chess.js instance** to confirm them. SAN, UCI, per-ply
+positions, the final FEN, the side to move and every capture are recorded
+facts.
+
+- Pieces are tracked by **identity** (`${color}-${type}-${origin}`), so a piece
+  survives promotion and castling.
+- En passant victims are resolved before the move is applied — the captured
+  pawn is not on the destination square.
+- Capture bias is a *preference*: an unmeetable request degrades to the
+  capture-heaviest sequence found rather than failing.
+- If no legal sequence can be built, generation **throws**. There is no canned
+  fallback position.
+
+**The position the moves produce is never drawn while the question is live**,
+at any stage. It is the answer.
+
+### Reproducing a question
+
+```
+?mode=blindfold-tracking&variant=mixed&seed=<seed>&debug=1
+```
+
+`?debug=1` shows the diagnostics panel: mode, variant, seed, expected answer,
+and for blindfold questions the kind, ply count, visibility, whole SAN
+sequence, hints used and pieces placed. Development builds only.
+
+In a test: `generateTrackingQuestion(context(), createRng(seed), variantId)`.
+
+### Reconstruction grading
+
+`state.placed` is the live board, seeded from `question.board.fen` — empty for
+`partial`/`full`, the damaged position for `correction`. Completion is decided
+by `gradeQuestion`, never by counting pieces, so "finished" and "correct"
+cannot drift apart. Clearing a square is a real answer and can complete the
+question; clearing a piece that belongs there is a mistake.
+
+The palette always shows **all twelve pieces with no counts**. Showing only
+what is still needed would give away the material balance.
+
+### Progress
+
+`core/progress/blindfold.ts`. **Blindfold attempts are excluded from
+`computeMastery` outright** — losing track of a piece is not the same as not
+knowing a square, and folding them in would make adaptive practice drill the
+wrong thing.
+
+Four optional `Attempt` fields carry the context: `hintsUsed`, `plies`,
+`boardVisibility`, `blindfoldKind`. Optional by design, so **the schema version
+is unchanged and no migration exists**; 1.3.0 backups import untouched and
+absent fields read as "not recorded".
+
+### Adding a question type
+
+Add the kind to `TrackingKind` and `kindsForVariant`; derive `expected` from
+the sequence, never invent it; give it a `kind` string and a `KIND_LABELS`
+entry; balance the answer; add a test that re-derives the answer from an
+independent replay. Never assert against the generator's own bookkeeping.
+
+## The engine (this branch only)
+
+Full detail in `ENGINE_INTEGRATION.md`, licensing in `GPL_COMPLIANCE.md`.
+
+`main` has no engine and is MIT. This branch bundles Stockfish and is GPLv3.
+
+### Where it lives
+
+```
+src/services/engine/          the whole boundary; import only from index.ts
+src/core/engineGame/game.ts   the game, chess.js-authoritative
+src/ui/screens/EngineGameScreen.tsx   the only screen that touches it
+public/engine/                the assets, copied by scripts/prepare-engine.mjs
+```
+
+| | |
+| --- | --- |
+| Package | `stockfish@18.0.8`, pinned exactly |
+| Build | lite single-threaded WebAssembly (~7 MB) |
+| Worker path | `engine/stockfish-18-lite-single.js` |
+| WASM path | `engine/stockfish-18-lite-single.wasm` |
+
+The Worker finds its own `.wasm` by replacing `.js` in its own URL, which is
+why both sit in one directory under a plain path. Not a bundler import.
+
+### UCI lifecycle
+
+`uci` → wait `uciok` → `isready` → wait `readyok` → `ucinewgame` → `isready` →
+per move: `position … moves …` then `go depth N movetime M` → wait `bestmove`.
+
+UCI has **no request ids**, so exactly one exchange may be outstanding.
+`EngineWorkerClient` enforces that and stamps each with a token; a reply to an
+abandoned search is dropped. `StockfishEngineService` serialises everything —
+including the handshake — through one queue.
+
+### Non-negotiable engine rules
+
+- **chess.js is the legality authority, always.** The engine proposes four
+  characters of text; `applyEngineMove` asks chess.js whether that is legal
+  here and stops the game with a stated reason if not. Never ask Stockfish to
+  adjudicate legality or termination.
+- **Ordinary drills must never depend on the engine**, and must keep working
+  when it fails. The engine mode has its own screen for that reason.
+- **Engine assets must never load for a non-engine mode.** The Worker is
+  constructed when a game starts, not before.
+- **Never on the main thread. No pondering, no background search, one Worker.**
+- Disposed when the game ends or the screen unmounts; search stopped when the
+  app is backgrounded.
+- **No analysis, evaluation, opening book or engine hints in the drills.**
+
+### If the engine ships
+
+- The distributed application is **GPLv3**. `LICENSE` is GPLv3, `LICENSE-MIT`
+  preserves the previous licence, and `package.json` says `GPL-3.0-or-later`.
+- `ENGINE_SOURCE.md` must keep matching the binary actually shipped — package
+  version, checksums, build steps. Changing the engine means updating it.
+- Adding the engine is a **major** version bump: it changes what is
+  distributed, the APK size, and the licence.
+- `npm run inspect:apk` asserts the engine assets are inside the APK. A build
+  with the worker but no wasm fails.
+
+### Difficulty
+
+Four labels backed by `Skill Level` plus a depth cap. **Never claim an Elo.**
+Stockfish's `UCI_Elo` is calibrated against its own search, not any rating
+pool, and strength moves with the time control. A test asserts the difficulty
+descriptions contain no rating-shaped number.
+
+### Hardware
+
+**The engine has never been run on Android hardware or an emulator.** Whether
+7 MB of WebAssembly loads acceptably in a real Android WebView is unmeasured.
+Do not describe it as verified on device without running it on one.
+
 ## Workflow for a future agent
 
 1. Read `AGENTS.md`, `CODEX_HANDOFF.md`, `AUDIT_REPORT.md`, `TEST_REPORT.md`,
@@ -162,3 +316,8 @@ real shipped bug. See `src/services/voice/state.ts`.
 - network calls at runtime
 - committing `local.properties`, keystores, tokens or machine paths
 - lowering the mastery bar to make numbers look better
+- folding blindfold results into square mastery
+- letting the engine decide what is legal, or letting a drill depend on it
+- loading engine assets for a non-engine mode
+- claiming an Elo for the engine difficulty levels
+- shipping engine binaries without keeping ENGINE_SOURCE.md accurate

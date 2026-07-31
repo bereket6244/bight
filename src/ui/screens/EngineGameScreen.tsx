@@ -106,6 +106,24 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
     };
   }, []);
 
+  /*
+   * A backgrounded app must not keep a chess engine searching.
+   *
+   * `stop` only abandons the current search; the Worker stays alive and the
+   * game state is untouched, so returning to the app leaves the position
+   * exactly as it was. If the search was for the computer's move, it is the
+   * user's turn to notice nothing happened and the game is still playable —
+   * the alternative, a phone burning battery on a search nobody is waiting
+   * for, is worse.
+   */
+  useEffect(() => {
+    const onHidden = (): void => {
+      if (document.visibilityState === 'hidden') void engineRef.current?.stop();
+    };
+    document.addEventListener('visibilitychange', onHidden);
+    return () => document.removeEventListener('visibilitychange', onHidden);
+  }, []);
+
   const failGame = useCallback((message: string) => {
     setEngineError(message);
     setThinking(false);
@@ -384,9 +402,31 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
         <div className="card" role="alert" data-testid="engine-error">
           <h2 className="card__title">The engine stopped</h2>
           <p className="card__subtitle">{engineError}</p>
+          <p className="card__subtitle">
+            The position is safe and every other mode is unaffected.
+          </p>
           <div className="button-row" style={{ marginTop: 'var(--gap)' }}>
-            <button type="button" className="button button--primary" onClick={onExit}>
-              Back to modes
+            {/* Retry starts a fresh game rather than resuming this one: the
+                engine was disposed, and resuming would mean handing it a
+                position it has no record of. */}
+            <button
+              type="button"
+              className="button button--primary"
+              data-testid="engine-retry"
+              onClick={() => {
+                void (async () => {
+                  await releaseEngine();
+                  engineRef.current = null;
+                  setEngineError(null);
+                  setGame(null);
+                  setPhase('setup');
+                })();
+              }}
+            >
+              Try again
+            </button>
+            <button type="button" className="button" onClick={onExit} data-testid="engine-end">
+              End game
             </button>
           </div>
         </div>

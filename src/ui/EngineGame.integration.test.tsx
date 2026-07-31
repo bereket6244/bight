@@ -274,3 +274,44 @@ describe('when the engine misbehaves', () => {
     await waitFor(() => expect(engine.calls).toContain('dispose'));
   });
 });
+
+describe('failure recovery and background behaviour', () => {
+  it('offers Try again and End game when the engine fails', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine({ failOnInitialize: 'wasm failed to load' }));
+
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-error');
+
+    expect(screen.getByTestId('engine-retry')).toBeInTheDocument();
+    expect(screen.getByTestId('engine-end')).toBeInTheDocument();
+  });
+
+  it('Try again returns to setup rather than resuming a game the engine lost', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine({ failOnInitialize: 'wasm failed to load' }));
+
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-error');
+    await user.click(screen.getByTestId('engine-retry'));
+
+    expect(await screen.findByTestId('engine-setup')).toBeInTheDocument();
+  });
+
+  it('stops the search when the app is backgrounded', async () => {
+    const user = userEvent.setup();
+    const engine = fakeEngine();
+    await renderGame(engine);
+
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => 'hidden',
+    });
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    await waitFor(() => expect(engine.calls).toContain('stop'));
+  });
+});

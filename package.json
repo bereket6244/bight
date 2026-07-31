@@ -1,13 +1,13 @@
 {
   "name": "bight",
-  "version": "1.4.0",
+  "version": "2.0.0",
   "description": "Bight - board sight. An offline chess coordinate and board-vision trainer.",
   "private": true,
   "type": "module",
   "license": "GPL-3.0-or-later",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "node scripts/prepare-engine.mjs && tsc --noEmit && vite build",
     "preview": "vite preview",
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc --noEmit",
@@ -18,12 +18,15 @@
     "android:build": "node scripts/sync-version.mjs && node scripts/build-apk.mjs",
     "android:release": "node scripts/build-apk.mjs --release",
     "fetch:voice-model": "node scripts/fetch-voice-model.mjs",
-    "verify": "node scripts/sync-version.mjs --check && node scripts/generate-icons.mjs --check && npm run lint && npm run typecheck && npm run test",
+    "verify": "node scripts/prepare-engine.mjs --check && node scripts/sync-version.mjs --check && node scripts/generate-icons.mjs --check && npm run lint && npm run typecheck && npm run test",
     "setup": "node scripts/setup.mjs",
     "sync:version": "node scripts/sync-version.mjs",
     "icons": "node scripts/generate-icons.mjs",
     "inspect:apk": "node scripts/inspect-apk.mjs",
-    "test:browser": "node scripts/browser-tests.mjs"
+    "test:browser": "node scripts/browser-tests.mjs",
+    "prepare:engine": "node scripts/prepare-engine.mjs",
+    "test:engine": "node scripts/engine-smoke.mjs && node scripts/engine-game-check.mjs",
+    "test:blindfold": "node scripts/blindfold-walkthrough.mjs"
   },
   "dependencies": {
     "@capacitor-community/sqlite": "^6.0.2",

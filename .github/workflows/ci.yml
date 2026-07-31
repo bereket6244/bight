@@ -11,7 +11,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'feature/**']
   pull_request:
 
 jobs:
@@ -31,6 +31,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Prepare the engine assets
+        run: npm run prepare:engine
 
       - name: Check version synchronization
         run: node scripts/sync-version.mjs --check
@@ -81,8 +84,21 @@ jobs:
           sudo apt-get install -y libnss3 libatk-bridge2.0-0 libgtk-3-0 libasound2t64 || \
           sudo apt-get install -y libnss3 libatk-bridge2.0-0 libgtk-3-0 libasound2
 
+      - name: Prepare the engine assets
+        run: npm run prepare:engine
+
       - name: Layout tests
         run: npm run test:browser
+
+      # The engine is 7 MB of WebAssembly loaded from a local path with no
+      # network fallback, so "does it actually boot and play" is a question
+      # only a real browser can answer.
+      - name: Engine and blindfold walkthroughs
+        run: |
+          npm run build
+          node scripts/engine-smoke.mjs --dist
+          node scripts/engine-game-check.mjs
+          npm run test:blindfold
 
   android:
     name: Android APK (best effort)
@@ -113,6 +129,9 @@ jobs:
       - name: Fetch the offline voice model
         run: npm run fetch:voice-model
         continue-on-error: true
+
+      - name: Prepare the engine assets
+        run: npm run prepare:engine
 
       - name: Build web bundle
         run: npx vite build

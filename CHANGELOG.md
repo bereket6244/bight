@@ -2,11 +2,15 @@
 
 All notable changes to Bight. Dates are the day the work landed.
 
-## Unreleased — 2026-07-31 (offline engine, on this branch only)
+## 2.0.0 — 2026-07-31 (offline engine, on this branch only)
 
 **This section describes work on `feature/blindfold-stockfish-handoff`, not on
 `main`.** It bundles Stockfish, which changes the licence of the distributed
 application. `main` remains MIT and ships no engine.
+
+A major version rather than a minor one, for three reasons that each stand on
+their own: it adds a chess engine, it grows the APK by 5.5 MB, and it changes
+the licence the application is distributed under.
 
 ### Added
 
