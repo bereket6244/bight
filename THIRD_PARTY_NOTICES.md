@@ -76,3 +76,54 @@ licence, subject to the Android SDK Terms and Conditions.
 ```bash
 npx license-checker --production --summary
 ```
+
+---
+
+## Launcher icon (third pass, v1.3.0)
+
+Bight's launcher icon is **original artwork**: a cream eye whose iris is a
+small alternating chessboard, on the app's board green (`#2F4A23` /`#EBECD0`).
+"Bight" means board sight, so the mark is a board being looked at.
+
+**Source files**
+
+- `assets/branding/bight-icon-source.svg` — editable colour source
+- `assets/branding/bight-icon-monochrome.svg` — themed-icon source
+- `scripts/generate-icons.mjs` — regenerates every Android resource
+
+**Attribution**
+
+The proportions of the eye lens were guided by the [Tabler Icons](https://tabler.io/icons)
+`eye` glyph, which is MIT licensed:
+
+> The MIT License (MIT)
+> Copyright (c) 2020-2024 Paweł Kuna
+>
+> Permission is hereby granted, free of charge, to any person obtaining a copy
+> of this software and associated documentation files (the "Software"), to deal
+> in the Software without restriction, including without limitation the rights
+> to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+> copies of the Software, and to permit persons to whom the Software is
+> furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all
+> copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+> IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+> FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+> AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+> LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+> OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+> SOFTWARE.
+
+**Modifications**: no Tabler path data is reused. The lens is an original
+two-arc shape drawn on Android's 108dp adaptive canvas, and the iris
+chessboard, the colours and the monochrome cut-out treatment are Bight's own.
+The MIT notice is reproduced above because the design was informed by Tabler's
+work, and attribution costs nothing.
+
+## Development dependencies added in the third pass
+
+- **puppeteer** (Apache-2.0) — drives a real Chromium for the layout tests that
+  jsdom cannot perform. Development only; not shipped in the APK.

@@ -61,6 +61,11 @@ export interface SessionSettings {
    * where answering without a board is meaningful.
    */
   hideBoard: boolean;
+  /**
+   * How much extra material sits on the board in modes that support it.
+   * Defaults to `standard`: minimal boards made fork exercises too easy.
+   */
+  density: 'minimal' | 'standard' | 'crowded';
   /** Show legal/geometric destination markers. */
   showHints: boolean;
   /**
@@ -107,6 +112,7 @@ export function defaultSettings(modeId: ModeId, variantId: string): SessionSetti
     promptVisibility: 'persistent',
     revealMs: 1200,
     hideBoard: false,
+    density: 'standard',
     showHints: false,
     accuracyFirst: true,
     sound: true,
@@ -154,6 +160,9 @@ export function validateSettings(settings: SessionSettings): SessionSettings {
     promptVisibility: settings.promptVisibility === 'flash' ? 'flash' : 'persistent',
     revealMs: clamp(settings.revealMs, MIN_REVEAL_MS, MAX_REVEAL_MS),
     hideBoard: Boolean(settings.hideBoard),
+    density: (['minimal', 'standard', 'crowded'] as const).includes(settings.density)
+      ? settings.density
+      : 'standard',
     feedback: settings.feedback === 'end-of-session' ? 'end-of-session' : 'immediate',
     retry: (['none', 'immediate', 'later', 'both'] as RetryPolicy[]).includes(settings.retry)
       ? settings.retry

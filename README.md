@@ -29,8 +29,13 @@ dark. There is deliberately no board: seeing the square would answer it.
 after landing, and the same from memory with no knight drawn. Plus Knight
 routes, with an optional "fewest moves" requirement.
 
-**Forks** — knight and queen. Two targets are named; find a square that
-attacks both. Every valid square is accepted, not one arbitrary answer.
+**Forks** — knight and queen, on realistic boards of 8–14 pieces. Two targets
+are named; either **find** a square that attacks both, or **play** the piece
+there over as many moves as it takes. While manoeuvring, the piece slides to
+empty squares only — capturing a target would change the question underneath
+you. Legal moves that do not yet fork are never marked wrong; solving in more
+moves than necessary is recorded as suboptimal, not as a mistake. Every valid
+square is accepted, not one arbitrary answer.
 
 **Notation** — read a move like Nbd2 and play it in a realistic position
 (10–26 pieces, both kings). The "Which knight?" exercise guarantees both

@@ -1,29 +1,50 @@
 /**
  * The mastery model.
  *
- * A square is mastered when the user answers it correctly, quickly, repeatedly
- * and recently. All four matter, which is what stops a single lucky fast
- * answer from marking a square learned:
+ * ## Why this was rebuilt
  *
- *   score = skill x confidence x retention
+ * The first version reported ~29 mastered squares after very little practice.
+ * Full confidence arrived after six attempts, a score of 0.9 counted as
+ * mastered, and every appearance of a square counted the same — so a handful
+ * of fast taps in one sitting was enough. It also read only `primarySquare`,
+ * which for a notation question is the *destination*, so "which knight moves
+ * there" contributed nothing at all.
  *
- *   skill       accuracy (weighted toward recent attempts) and speed
- *   confidence  grows with sample size, so one attempt can never score high
- *   retention   decays as a square goes unpracticed
+ * Mastery now means durable, cross-context knowledge:
  *
- * The same numbers drive adaptive practice: practice weight is the inverse of
- * mastery, capped so one weak square cannot crowd out the rest of the board.
+ *   score = skill x confidence x spacing x breadth x retention
  *
- * This file is the reference the in-app explanation and the README describe.
+ *   skill        recent accuracy and speed
+ *   confidence   grows with sample size — a dozen exposures, not six
+ *   spacing      requires several distinct sessions and separate days
+ *   breadth      requires the square in more than one kind of exercise
+ *   retention    decays as the square goes unpracticed
+ *
+ * Every factor is 0..1 and they multiply, so a square cannot be mastered by
+ * being strong in one dimension alone. Cramming in a single sitting caps the
+ * spacing factor; being fast at tapping coordinates caps the breadth factor.
  */
 
 import { ALL_SQUARES } from '../chess/square';
 import type { SquareName } from '../chess/types';
-import type { StoredAttempt } from '../storage/types';
+import { localDateKey, type StoredAttempt } from '../storage/types';
 import { MAX_WEIGHT } from '../training/pool';
 
-/** Attempts needed before confidence reaches its maximum. */
-export const CONFIDENCE_SAMPLE = 6;
+/**
+ * Exposures before confidence reaches its maximum.
+ * Doubled from 6: six answers in one sitting is not evidence of knowing a
+ * square, and six was the single biggest cause of inflated mastery.
+ */
+export const CONFIDENCE_SAMPLE = 12;
+
+/** Distinct sessions before the spacing factor is satisfied. */
+export const REQUIRED_SESSIONS = 3;
+
+/** Distinct calendar days before the spacing factor is satisfied. */
+export const REQUIRED_DAYS = 2;
+
+/** Distinct skill dimensions before the breadth factor is satisfied. */
+export const REQUIRED_DIMENSIONS = 2;
 
 /** Response time treated as fully fast, and the point where speed scores zero. */
 export const FAST_MS = 2000;
@@ -35,28 +56,88 @@ export const RETENTION_HALF_LIFE_DAYS = 21;
 /** Weight of the most recent attempt in the accuracy average. */
 export const RECENCY_ALPHA = 0.35;
 
+/**
+ * The kinds of knowledge Bight trains.
+ *
+ * These are genuinely different skills: someone can tap e4 instantly and still
+ * hesitate over which knight the notation Nbd2 means.
+ */
+export type SkillDimension =
+  /** See a coordinate, tap the square. */
+  | 'recognition'
+  /** See a square, name the coordinate. */
+  | 'recall'
+  /** Read notation, pick the right piece and the right destination. */
+  | 'notation'
+  /** See what a piece attacks: knight vision, forks, blockers. */
+  | 'vision';
+
+export const SKILL_LABELS: Record<SkillDimension, string> = {
+  recognition: 'Find the square',
+  recall: 'Name the square',
+  notation: 'Notation',
+  vision: 'Piece vision',
+};
+
+/**
+ * Which skill an attempt exercised, derived from its mode.
+ *
+ * Derived rather than stored so historical attempts — which predate this
+ * model entirely — still classify correctly without a data migration.
+ */
+export function skillOf(modeId: string): SkillDimension {
+  switch (modeId) {
+    case 'coordinate-to-square':
+    case 'memory-coordinate-to-square':
+      return 'recognition';
+    case 'square-to-coordinate':
+    case 'memory-square-to-coordinate':
+    case 'square-color':
+    case 'alignment':
+    case 'sequence':
+      return 'recall';
+    case 'notation':
+    case 'piece-movement':
+      return 'notation';
+    default:
+      return 'vision';
+  }
+}
+
 export type MasteryLevel = 'unseen' | 'learning' | 'familiar' | 'strong' | 'mastered';
+
+export interface SkillStat {
+  attempts: number;
+  correct: number;
+  accuracy: number;
+}
 
 export interface SquareMastery {
   square: SquareName;
   attempts: number;
   correct: number;
-  /** Plain accuracy over all attempts. */
   accuracy: number;
-  /** Accuracy weighted toward recent attempts. */
   recentAccuracy: number;
   averageMs: number;
   fastestMs: number | null;
   lastSeenAt: number | null;
+  /** Distinct sessions this square appeared in. */
+  sessions: number;
+  /** Distinct calendar days this square was practiced on. */
+  days: number;
+  /** Per-skill breakdown, so the UI can say *what* is weak. */
+  skills: Partial<Record<SkillDimension, SkillStat>>;
+  /** Board orientations the square has been answered from. */
+  orientations: number;
   /** 0 to 1. */
   score: number;
   level: MasteryLevel;
-  /** How strongly to favour this square in adaptive practice. */
   weight: number;
+  /** Which requirement is currently holding the square back. */
+  limitedBy: 'evidence' | 'spacing' | 'breadth' | 'accuracy' | 'recency' | null;
 }
 
 export interface MasteryOptions {
-  /** "Now", so retention decay is testable. */
   now?: number;
 }
 
@@ -67,11 +148,22 @@ function speedScore(averageMs: number): number {
   return (SLOW_MS - averageMs) / (SLOW_MS - FAST_MS);
 }
 
-function confidence(attempts: number): number {
+function confidenceFactor(attempts: number): number {
   return Math.min(1, attempts / CONFIDENCE_SAMPLE);
 }
 
-function retention(lastSeenAt: number | null, now: number): number {
+/** Half from distinct sessions, half from distinct days. */
+function spacingFactor(sessions: number, days: number): number {
+  return (
+    0.5 * Math.min(1, sessions / REQUIRED_SESSIONS) + 0.5 * Math.min(1, days / REQUIRED_DAYS)
+  );
+}
+
+function breadthFactor(dimensions: number): number {
+  return Math.min(1, dimensions / REQUIRED_DIMENSIONS);
+}
+
+function retentionFactor(lastSeenAt: number | null, now: number): number {
   if (lastSeenAt === null) return 0;
   const days = Math.max(0, (now - lastSeenAt) / 86_400_000);
   return Math.pow(0.5, days / RETENTION_HALF_LIFE_DAYS);
@@ -85,10 +177,6 @@ export function masteryLevel(score: number, attempts: number): MasteryLevel {
   return 'learning';
 }
 
-/**
- * Exponentially weighted accuracy, oldest attempt first.
- * Recent results dominate, so improvement shows up quickly.
- */
 function weightedAccuracy(results: readonly boolean[]): number {
   if (results.length === 0) return 0;
   let value = results[0] === true ? 1 : 0;
@@ -98,83 +186,116 @@ function weightedAccuracy(results: readonly boolean[]): number {
   return value;
 }
 
-/**
- * Practice weight from mastery.
- *
- * A square never drops below weight 1 (so mastered squares still appear) and
- * never exceeds MAX_WEIGHT, which bounds how much adaptive practice can
- * distort the distribution. Unseen squares sit above the middle so new ground
- * gets covered before drilling old mistakes.
- */
 export function practiceWeight(score: number, attempts: number): number {
   if (attempts === 0) return 3;
   const raw = 1 + (1 - score) * (MAX_WEIGHT - 1);
   return Math.min(MAX_WEIGHT, Math.max(1, Number(raw.toFixed(3))));
 }
 
+interface Accumulator {
+  results: boolean[];
+  totalMs: number;
+  timedCount: number;
+  fastestMs: number | null;
+  lastSeenAt: number | null;
+  sessions: Set<string>;
+  days: Set<string>;
+  orientations: Set<string>;
+  skills: Map<SkillDimension, { attempts: number; correct: number }>;
+}
+
+function emptyAccumulator(): Accumulator {
+  return {
+    results: [],
+    totalMs: 0,
+    timedCount: 0,
+    fastestMs: null,
+    lastSeenAt: null,
+    sessions: new Set(),
+    days: new Set(),
+    orientations: new Set(),
+    skills: new Map(),
+  };
+}
+
 /**
- * Per-square mastery for every square that appears in the attempt history.
+ * Per-square mastery from the attempt history.
  *
- * A multi-square question (knight vision) attributes to its primary square,
- * and — at reduced strength — to the squares it asked about, so a knight drill
- * still teaches the app which target squares are weak.
+ * A notation attempt contributes to *two* squares: the origin (did you pick
+ * the right piece?) and the destination (did you know where it goes?). They
+ * are credited independently, so choosing the wrong knight but the right
+ * square penalises origin knowledge without punishing destination knowledge.
  */
 export function computeMastery(
   attempts: readonly StoredAttempt[],
   options: MasteryOptions = {},
 ): Map<SquareName, SquareMastery> {
   const now = options.now ?? Date.now();
-
-  interface Accumulator {
-    results: boolean[];
-    totalMs: number;
-    timedCount: number;
-    fastestMs: number | null;
-    lastSeenAt: number | null;
-  }
-
   const bySquare = new Map<SquareName, Accumulator>();
+
   const ensure = (square: SquareName): Accumulator => {
     let entry = bySquare.get(square);
     if (entry === undefined) {
-      entry = { results: [], totalMs: 0, timedCount: 0, fastestMs: null, lastSeenAt: null };
+      entry = emptyAccumulator();
       bySquare.set(square, entry);
     }
     return entry;
+  };
+
+  const record = (
+    square: SquareName,
+    attempt: StoredAttempt,
+    correct: boolean,
+    timed: boolean,
+  ): void => {
+    const entry = ensure(square);
+    const skill = skillOf(attempt.modeId);
+
+    entry.results.push(correct);
+    entry.lastSeenAt = attempt.timestamp;
+    entry.sessions.add(attempt.sessionId ?? 'unknown');
+    entry.days.add(localDateKey(attempt.timestamp));
+    entry.orientations.add(attempt.orientation);
+
+    const stat = entry.skills.get(skill) ?? { attempts: 0, correct: 0 };
+    stat.attempts += 1;
+    if (correct) stat.correct += 1;
+    entry.skills.set(skill, stat);
+
+    if (timed) {
+      entry.totalMs += attempt.responseMs;
+      entry.timedCount += 1;
+      if (correct) {
+        entry.fastestMs =
+          entry.fastestMs === null ? attempt.responseMs : Math.min(entry.fastestMs, attempt.responseMs);
+      }
+    }
   };
 
   // Oldest first so the weighted accuracy walks forward in time.
   const ordered = [...attempts].sort((a, b) => a.timestamp - b.timestamp);
 
   for (const attempt of ordered) {
-    const primary = attempt.primarySquare;
-    if (primary !== null) {
-      const entry = ensure(primary);
-      entry.results.push(attempt.correct);
-      entry.totalMs += attempt.responseMs;
-      entry.timedCount += 1;
-      entry.lastSeenAt = attempt.timestamp;
-      if (attempt.correct) {
-        entry.fastestMs =
-          entry.fastestMs === null ? attempt.responseMs : Math.min(entry.fastestMs, attempt.responseMs);
+    const origin = attempt.originSquare ?? null;
+    const hasSplit = origin !== null && attempt.originCorrect !== undefined;
+
+    if (hasSplit) {
+      // Notation: credit origin and destination on their own merits.
+      record(origin, attempt, attempt.originCorrect === true, true);
+      if (attempt.primarySquare !== null) {
+        record(attempt.primarySquare, attempt, attempt.destinationCorrect === true, true);
       }
+    } else if (attempt.primarySquare !== null) {
+      record(attempt.primarySquare, attempt, attempt.correct, true);
     }
 
-    // Squares the user actually missed count against them individually; this
-    // is what surfaces "frequently missed knight targets".
-    for (const square of attempt.missed) {
-      const entry = ensure(square);
-      entry.results.push(false);
-      entry.lastSeenAt = attempt.timestamp;
-    }
-    for (const square of attempt.extra) {
-      const entry = ensure(square);
-      entry.results.push(false);
-      entry.lastSeenAt = attempt.timestamp;
-    }
+    // Squares the user actually missed count against them individually.
+    for (const square of attempt.missed) record(square, attempt, false, false);
+    for (const square of attempt.extra) record(square, attempt, false, false);
   }
 
   const out = new Map<SquareName, SquareMastery>();
+
   for (const [square, entry] of bySquare) {
     const attemptCount = entry.results.length;
     const correct = entry.results.filter(Boolean).length;
@@ -183,9 +304,21 @@ export function computeMastery(
     const averageMs = entry.timedCount === 0 ? 0 : entry.totalMs / entry.timedCount;
 
     const skill = 0.75 * recentAccuracy + 0.25 * speedScore(averageMs);
-    const score = Number(
-      (skill * confidence(attemptCount) * retention(entry.lastSeenAt, now)).toFixed(4),
-    );
+    const confidence = confidenceFactor(attemptCount);
+    const spacing = spacingFactor(entry.sessions.size, entry.days.size);
+    const breadth = breadthFactor(entry.skills.size);
+    const retention = retentionFactor(entry.lastSeenAt, now);
+
+    const score = Number((skill * confidence * spacing * breadth * retention).toFixed(4));
+
+    const skills: Partial<Record<SkillDimension, SkillStat>> = {};
+    for (const [dimension, stat] of entry.skills) {
+      skills[dimension] = {
+        attempts: stat.attempts,
+        correct: stat.correct,
+        accuracy: stat.attempts === 0 ? 0 : stat.correct / stat.attempts,
+      };
+    }
 
     out.set(square, {
       square,
@@ -196,16 +329,39 @@ export function computeMastery(
       averageMs: Math.round(averageMs),
       fastestMs: entry.fastestMs,
       lastSeenAt: entry.lastSeenAt,
+      sessions: entry.sessions.size,
+      days: entry.days.size,
+      skills,
+      orientations: entry.orientations.size,
       score,
       level: masteryLevel(score, attemptCount),
       weight: practiceWeight(score, attemptCount),
+      limitedBy: limitingFactor({ confidence, spacing, breadth, skill, retention }),
     });
   }
 
   return out;
 }
 
-/** Mastery for all 64 squares, filling in unseen ones. */
+/** Which factor is furthest from 1, so the UI can say what to do next. */
+function limitingFactor(factors: {
+  confidence: number;
+  spacing: number;
+  breadth: number;
+  skill: number;
+  retention: number;
+}): SquareMastery['limitedBy'] {
+  const entries: Array<[SquareMastery['limitedBy'], number]> = [
+    ['evidence', factors.confidence],
+    ['spacing', factors.spacing],
+    ['breadth', factors.breadth],
+    ['accuracy', factors.skill],
+    ['recency', factors.retention],
+  ];
+  const worst = entries.reduce((a, b) => (b[1] < a[1] ? b : a));
+  return worst[1] >= 0.95 ? null : worst[0];
+}
+
 export function fullBoardMastery(
   attempts: readonly StoredAttempt[],
   options: MasteryOptions = {},
@@ -222,15 +378,19 @@ export function fullBoardMastery(
       averageMs: 0,
       fastestMs: null,
       lastSeenAt: null,
+      sessions: 0,
+      days: 0,
+      skills: {},
+      orientations: 0,
       score: 0,
       level: 'unseen',
       weight: practiceWeight(0, 0),
+      limitedBy: 'evidence',
     });
   }
   return computed;
 }
 
-/** The weight map the session engine feeds to generators. */
 export function practiceWeights(
   attempts: readonly StoredAttempt[],
   options: MasteryOptions = {},
@@ -241,7 +401,6 @@ export function practiceWeights(
   return weights;
 }
 
-/** The weakest squares, worst first. Squares never seen come first of all. */
 export function weakestSquares(
   attempts: readonly StoredAttempt[],
   count: number,
@@ -256,7 +415,6 @@ export function weakestSquares(
     .slice(0, count);
 }
 
-/** Squares answered correctly but slowly - the spec's "slow but correct". */
 export function slowButCorrect(
   attempts: readonly StoredAttempt[],
   options: MasteryOptions = {},
@@ -266,15 +424,15 @@ export function slowButCorrect(
     .sort((a, b) => b.averageMs - a.averageMs);
 }
 
-/** Board-wide mastery summary for the progress screen. */
 export interface MasteryOverview {
   mastered: number;
   strong: number;
   familiar: number;
   learning: number;
   unseen: number;
-  /** Mean score across all 64 squares. */
   averageScore: number;
+  /** Per-skill accuracy across the whole board. */
+  bySkill: Partial<Record<SkillDimension, SkillStat>>;
 }
 
 export function masteryOverview(
@@ -283,6 +441,18 @@ export function masteryOverview(
 ): MasteryOverview {
   const all = [...fullBoardMastery(attempts, options).values()];
   const count = (level: MasteryLevel): number => all.filter((m) => m.level === level).length;
+
+  const bySkill: Partial<Record<SkillDimension, SkillStat>> = {};
+  for (const entry of all) {
+    for (const [dimension, stat] of Object.entries(entry.skills) as Array<[SkillDimension, SkillStat]>) {
+      const current = bySkill[dimension] ?? { attempts: 0, correct: 0, accuracy: 0 };
+      current.attempts += stat.attempts;
+      current.correct += stat.correct;
+      current.accuracy = current.attempts === 0 ? 0 : current.correct / current.attempts;
+      bySkill[dimension] = current;
+    }
+  }
+
   return {
     mastered: count('mastered'),
     strong: count('strong'),
@@ -291,13 +461,18 @@ export function masteryOverview(
     unseen: count('unseen'),
     averageScore:
       all.length === 0 ? 0 : Number((all.reduce((sum, m) => sum + m.score, 0) / all.length).toFixed(4)),
+    bySkill,
   };
 }
 
-/** Plain-language explanation shown in the app next to the mastery figures. */
+/** Plain-language explanation shown next to the mastery figures. */
 export const MASTERY_EXPLANATION = [
-  'A square counts as mastered when four things are true at once:',
-  `you get it right (recent answers count most), you answer it quickly (under ${FAST_MS / 1000}s scores full marks), you have answered it at least ${CONFIDENCE_SAMPLE} times, and you have practiced it recently.`,
-  `Mastery fades if you stop practicing - a square left alone for about ${RETENTION_HALF_LIFE_DAYS} days drops to roughly half its score, which is why old ground comes back around.`,
-  'Because sample size is part of the score, one lucky fast answer can never mark a square mastered.',
+  'A square counts as mastered only when all of these are true at once:',
+  `you have answered it about ${CONFIDENCE_SAMPLE} times;`,
+  `across at least ${REQUIRED_SESSIONS} separate sessions and ${REQUIRED_DAYS} different days;`,
+  `in at least ${REQUIRED_DIMENSIONS} different kinds of exercise — tapping a coordinate is not the same skill as knowing which knight the notation means;`,
+  'with high recent accuracy and quick answers;',
+  'and recently enough that you have not forgotten it.',
+  `Mastery fades: a square left alone for about ${RETENTION_HALF_LIFE_DAYS} days drops to roughly half its score, which is why old ground comes back around.`,
+  'Because all of these multiply together, a burst of fast taps in one sitting can never be enough on its own.',
 ].join(' ');

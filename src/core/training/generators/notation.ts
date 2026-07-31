@@ -192,6 +192,7 @@ export const notationMode: ModeDefinition = {
     'A move such as Nbd2 is given and you play it in a realistic position. The "Which knight?" variant guarantees both knights are on the board, so you have to work out which one the notation means.',
   category: 'notation',
   variants: NOTATION_VARIANTS,
+  rendersBoard: true,
   supportedLayouts: ['custom'],
   supportsHideBoard: false,
   supportsVoice: false,

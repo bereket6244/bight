@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="108" height="108"
+     role="img" aria-label="Bight monochrome mark">
+  <title>Bight — monochrome</title>
+  <desc>
+    Single-colour version for Android's themed-icon layer, which tints whatever
+    it is given with the system accent and ignores colour. Everything is solid
+    black so the tint applies evenly; the iris checkers are cut out rather than
+    painted a second colour, which is what keeps the board motif legible after
+    tinting.
+
+    Same 108dp canvas and same centre-66dp safe zone as the colour source.
+  </desc>
+
+  <defs>
+    <mask id="cutouts">
+      <!-- White keeps, black removes. -->
+      <rect width="108" height="108" fill="black" />
+      <path d="M 20,54 C 32,36 76,36 88,54 C 76,72 32,72 20,54 Z" fill="white" />
+      <!-- Hollow out the lens so only the outline and iris remain. -->
+      <path d="M 26,54 C 36,41 72,41 82,54 C 72,67 36,67 26,54 Z" fill="black" />
+      <!-- Iris disc back in. -->
+      <circle cx="54" cy="54" r="13.5" fill="white" />
+      <!-- Checker squares removed from the iris. -->
+      <g fill="black">
+        <rect x="40.5" y="40.5" width="6.75" height="6.75" />
+        <rect x="54" y="40.5" width="6.75" height="6.75" />
+        <rect x="47.25" y="47.25" width="6.75" height="6.75" />
+        <rect x="60.75" y="47.25" width="6.75" height="6.75" />
+        <rect x="40.5" y="54" width="6.75" height="6.75" />
+        <rect x="54" y="54" width="6.75" height="6.75" />
+        <rect x="47.25" y="60.75" width="6.75" height="6.75" />
+        <rect x="60.75" y="60.75" width="6.75" height="6.75" />
+      </g>
+    </mask>
+  </defs>
+
+  <rect width="108" height="108" fill="#000000" mask="url(#cutouts)" />
+</svg>

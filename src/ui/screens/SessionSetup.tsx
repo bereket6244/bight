@@ -15,7 +15,8 @@ import { FILE_LETTERS } from '../../core/chess/types';
 import { QUADRANT_LABELS, QUADRANTS } from '../../core/chess/square';
 import { validateSettings, type SessionSettings } from '../../core/session/settings';
 import type { ModeDefinition } from '../../core/training/types';
-import { useVoiceAvailability, voiceShortStatus } from '../../services/voice/useVoice';
+import { useVoiceCapability } from '../../services/voice/useVoice';
+import { isVoiceUsable, voiceBadgeText } from '../../services/voice/state';
 
 export interface SessionSetupProps {
   mode: ModeDefinition;
@@ -68,7 +69,7 @@ export function SessionSetup({ mode, initial, onStart, onBack }: SessionSetupPro
   const [settings, setSettings] = useState<SessionSettings>(initial);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
-  const voice = useVoiceAvailability();
+  const voice = useVoiceCapability();
 
   const patch = (changes: Partial<SessionSettings>): void =>
     setSettings((current) => ({ ...current, ...changes }));
@@ -77,8 +78,9 @@ export function SessionSetup({ mode, initial, onStart, onBack }: SessionSetupPro
     list.includes(value) ? list.filter((v) => v !== value) : [...list, value].sort((a, b) => a - b);
 
   const limitKind = settings.limit.kind;
+  const rendersBoard = mode.rendersBoard === true;
   const voiceSupported = mode.supportsVoice === true;
-  const voiceReady = voice.state === 'ready';
+  const voiceReady = isVoiceUsable(voice.state);
 
   return (
     <div data-testid="session-setup">
@@ -118,28 +120,48 @@ export function SessionSetup({ mode, initial, onStart, onBack }: SessionSetupPro
         />
       ) : null}
 
-      <Segmented
-        label="Orientation"
-        value={settings.orientation}
-        options={[
-          { value: 'white', label: 'White' },
-          { value: 'black', label: 'Black' },
-          { value: 'alternating', label: 'Alternate' },
-        ]}
-        onChange={(orientation) => patch({ orientation })}
-        testId="setup-orientation"
-      />
+      {/* Orientation and labels only mean something when a board is drawn.
+          Square colour and alignment answer from coordinates alone. */}
+      {rendersBoard ? (
+        <>
+          <Segmented
+            label="Orientation"
+            value={settings.orientation}
+            options={[
+              { value: 'white', label: 'White' },
+              { value: 'black', label: 'Black' },
+              { value: 'alternating', label: 'Alternate' },
+            ]}
+            onChange={(orientation) => patch({ orientation })}
+            testId="setup-orientation"
+          />
 
-      <Segmented
-        label="Coordinate labels"
-        value={settings.labels}
-        options={[
-          { value: 'always', label: 'On' },
-          { value: 'never', label: 'Off' },
-        ]}
-        onChange={(labels) => patch({ labels })}
-        testId="setup-labels"
-      />
+          <Segmented
+            label="Coordinate labels"
+            value={settings.labels}
+            options={[
+              { value: 'always', label: 'On' },
+              { value: 'never', label: 'Off' },
+            ]}
+            onChange={(labels) => patch({ labels })}
+            testId="setup-labels"
+          />
+        </>
+      ) : null}
+
+      {mode.supportsDensity === true ? (
+        <Segmented
+          label="Board material"
+          value={settings.density}
+          options={[
+            { value: 'minimal', label: 'Minimal' },
+            { value: 'standard', label: 'Standard' },
+            { value: 'crowded', label: 'Crowded' },
+          ]}
+          onChange={(density) => patch({ density })}
+          testId="setup-density"
+        />
+      ) : null}
 
       <Segmented
         label="Session length"
@@ -286,7 +308,7 @@ export function SessionSetup({ mode, initial, onStart, onBack }: SessionSetupPro
           <p className="setup-row__hint" data-testid="setup-voice-status">
             {voiceReady
               ? 'The keypad still works at any time.'
-              : voiceShortStatus(voice)}
+              : `${voiceBadgeText(voice.state)} — set this up in Settings.`}
           </p>
         </div>
       ) : null}

@@ -6,7 +6,9 @@
  */
 
 import { sortSquares } from '../chess/geometry';
+import { forksFrom } from '../chess/fork';
 import { isValidKnightRoute } from '../chess/knightRoute';
+import { occupancyFromFen } from '../chess/position';
 import { squareColor } from '../chess/square';
 import type { SquareName } from '../chess/types';
 import type { ExpectedAnswer, Grade, Question, SubmittedAnswer } from './types';
@@ -112,6 +114,45 @@ export function gradeAnswer(expected: ExpectedAnswer, submitted: SubmittedAnswer
       };
     }
 
+    case 'piece-journey': {
+      const path = (submitted as Extract<SubmittedAnswer, { kind: 'piece-journey' }>).path;
+      if (path.length === 0) {
+        return {
+          correct: false,
+          missed: expected.exampleRoute.slice(1),
+          extra: [],
+          explanation: `The ${expected.piece} never moved. One route is ${expected.exampleRoute.join(' - ')}.`,
+        };
+      }
+
+      const landing = path[path.length - 1] as SquareName;
+      const occupancy = occupancyFromFen(expected.fen);
+      occupancy.delete(expected.from);
+      const forks = forksFrom(
+        { type: expected.piece, color: expected.color },
+        landing,
+        expected.targets,
+        occupancy,
+      );
+
+      const moves = path.length;
+      const optimal = moves <= expected.minMoves;
+
+      return {
+        correct: forks,
+        missed: forks ? [] : expected.exampleRoute.slice(1),
+        extra: [],
+        // Taking the long way round is solved, not wrong. The session records
+        // it separately rather than calling it a chess mistake.
+        optimal: forks ? optimal : undefined,
+        explanation: forks
+          ? optimal
+            ? `${landing} attacks both, in ${moves} move${moves === 1 ? '' : 's'}.`
+            : `${landing} attacks both, but in ${moves} moves rather than ${expected.minMoves}.`
+          : `The ${expected.piece} on ${landing} does not attack both targets yet.`,
+      };
+    }
+
     case 'square-path': {
       const answer = (submitted as Extract<SubmittedAnswer, { kind: 'square-path' }>).squares;
       if (answer.length === 0) {
@@ -186,6 +227,8 @@ export function emptyAnswerFor(expected: ExpectedAnswer): SubmittedAnswer {
       return { kind: 'move', from: null, to: null };
     case 'square-path':
       return { kind: 'square-path', squares: [] };
+    case 'piece-journey':
+      return { kind: 'piece-journey', path: [] };
   }
 }
 
@@ -208,6 +251,8 @@ export function describeExpected(expected: ExpectedAnswer): string {
       return `${expected.from}-${expected.to}`;
     case 'square-path':
       return expected.exampleRoute.join(' - ');
+    case 'piece-journey':
+      return `${expected.exampleRoute.join(' - ')} (${expected.minMoves} moves)`;
   }
 }
 
@@ -229,6 +274,8 @@ export function describeSubmitted(submitted: SubmittedAnswer): string {
         : `${submitted.from}-${submitted.to}`;
     case 'square-path':
       return submitted.squares.length === 0 ? '(no answer)' : submitted.squares.join(' - ');
+    case 'piece-journey':
+      return submitted.path.length === 0 ? '(no answer)' : submitted.path.join(' - ');
   }
 }
 

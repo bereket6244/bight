@@ -19,12 +19,8 @@ import { exportBackup, importBackup, inspectBackup } from '../../core/backup/ser
 import { backupFilename } from '../../core/backup/format';
 import { useApp } from '../state/AppContext';
 import { APP_VERSION, PACKAGE_ID } from '../../core/version';
-import {
-  useMicrophonePermission,
-  useVoiceAvailability,
-  voiceBadge,
-  voiceStatusLabel,
-} from '../../services/voice/useVoice';
+import { useVoiceCapability } from '../../services/voice/useVoice';
+import { effectiveVoiceEnabled, isVoiceUsable, voiceBadgeText } from '../../services/voice/state';
 import { speechAvailable } from '../../services/speech';
 
 /**
@@ -81,8 +77,7 @@ export function SettingsScreen() {
   const fileInput = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const [pendingImport, setPendingImport] = useState<{ json: string; summary: string } | null>(null);
-  const voice = useVoiceAvailability();
-  const microphone = useMicrophonePermission();
+  const voice = useVoiceCapability();
 
   const handleExport = async (): Promise<void> => {
     try {
@@ -133,23 +128,24 @@ export function SettingsScreen() {
     setPendingImport(null);
   };
 
-  /** Enabling voice is the only thing that may ask for the microphone. */
+  /**
+   * Enabling voice is the only thing that may ask for the microphone.
+   *
+   * The preference records intent and is saved regardless of the outcome; what
+   * the checkbox *shows* is the reconciled state. Writing `voiceInput: false`
+   * on a failed request, as the first version did, meant a permission granted
+   * a moment later left the switch stuck off.
+   */
   const toggleVoice = async (enabled: boolean): Promise<void> => {
     if (!enabled) {
       await app.updatePreferences({ voiceInput: false });
       return;
     }
-    const granted = await microphone.request();
-    await app.updatePreferences({ voiceInput: granted });
-    if (!granted) {
-      setMessage({
-        kind: 'error',
-        text: 'Voice answers need microphone access. Touch and keypad input still work.',
-      });
-    }
+    await app.updatePreferences({ voiceInput: true });
+    await voice.requestVoice();
   };
 
-  const voiceUsable = voice.state === 'ready';
+  const voiceUsable = isVoiceUsable(voice.state);
 
   return (
     <div data-testid="settings-screen">
@@ -216,23 +212,31 @@ export function SettingsScreen() {
           <span>
             Voice answers{' '}
             <span className={`badge${voiceUsable ? ' badge--on' : ''}`} data-testid="voice-badge">
-              {voiceBadge(voice)}
+              {voiceBadgeText(voice.state)}
             </span>
           </span>
           <input
             type="checkbox"
-            checked={app.preferences.voiceInput}
-            disabled={!voiceUsable}
+            /*
+             * The *effective* state, not the raw preference. A stored
+             * preference of true with no permission behind it used to render
+             * as an enabled checkbox, which is how the app claimed voice was
+             * on before it had ever asked for a microphone.
+             */
+            checked={effectiveVoiceEnabled(app.preferences.voiceInput, voice.state)}
+            disabled={voice.state === 'permission-requesting' || voice.state === 'model-checking'}
             onChange={(event) => void toggleVoice(event.target.checked)}
             data-testid="setting-voice-answers"
             aria-label="Voice answers"
           />
         </div>
+
         <p className="card__subtitle setting-hint" data-testid="voice-status">
-          {voiceStatusLabel(voice)}
-          {voiceUsable ? ' The microphone is requested only when you turn this on.' : ''}
+          {voice.detail}
         </p>
-        {microphone.state === 'denied' ? (
+
+        {/* A stable, actionable row - not a message that flashes and vanishes. */}
+        {voice.canRetry ? (
           <div className="button-row" style={{ marginTop: 8 }}>
             <button
               type="button"
@@ -240,10 +244,20 @@ export function SettingsScreen() {
               onClick={() => void toggleVoice(true)}
               data-testid="retry-microphone"
             >
-              Try again
+              {voice.state === 'permission-not-requested' ? 'Allow microphone' : 'Try again'}
             </button>
           </div>
         ) : null}
+
+        {voice.needsAppSettings ? (
+          <p className="card__subtitle setting-hint" data-testid="voice-settings-hint">
+            To turn it back on: {voice.appSettingsHint}
+          </p>
+        ) : null}
+
+        <p className="card__subtitle setting-hint">
+          Touch and the two-tap keypad always keep working, whatever voice does.
+        </p>
       </div>
 
       <div className="card">

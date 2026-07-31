@@ -14,6 +14,7 @@ import { exportBackup, importBackup, inspectBackup } from './service';
 import { MemoryRepository } from '../storage/memory';
 import { defaultPreferences, SCHEMA_VERSION, type BightData } from '../storage/types';
 import { defaultSettings } from '../session/settings';
+import { APP_VERSION } from '../version';
 import type { Attempt } from '../session/engine';
 
 const T0 = 1_700_000_000_000;
@@ -79,7 +80,9 @@ describe('backup format', () => {
     const backup = createBackup(emptyData(), T0);
     expect(backup.format).toBe(BACKUP_FORMAT_ID);
     expect(backup.schemaVersion).toBe(SCHEMA_VERSION);
-    expect(backup.appVersion).toBe('1.0.0');
+    // Read from the single source of truth, so a version bump cannot leave a
+    // stale literal behind in a test.
+    expect(backup.appVersion).toBe(APP_VERSION);
     expect(backup.exportedAt).toBe(T0);
   });
 

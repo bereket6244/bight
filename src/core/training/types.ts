@@ -50,7 +50,9 @@ export type AnswerKind =
   /** Move a piece: select origin then destination (or drag). */
   | 'move'
   /** Tap squares in order to trace a route. */
-  | 'square-path';
+  | 'square-path'
+  /** Move one piece repeatedly until it reaches a goal square. */
+  | 'piece-journey';
 
 export interface SingleSquareAnswer {
   kind: 'single-square';
@@ -110,8 +112,32 @@ export interface SquarePathAnswer {
   exampleRoute: SquareName[];
 }
 
+/**
+ * Move a piece, possibly several times, until it attacks every target.
+ *
+ * Unlike `MoveAnswer` this has no single correct destination: any reachable
+ * square that forks the targets ends the question, and getting there may take
+ * more than one move. Intermediate moves are not mistakes.
+ */
+export interface PieceJourneyAnswer {
+  kind: 'piece-journey';
+  piece: PieceType;
+  color: PieceColor;
+  /** Where the piece starts. */
+  from: SquareName;
+  /** The pieces that must all be attacked at once. */
+  targets: SquareName[];
+  /** Fewest moves that reach a forking square, proven by breadth-first search. */
+  minMoves: number;
+  /** One shortest route, shown in a review. */
+  exampleRoute: SquareName[];
+  /** Full FEN, so grading can re-derive occupancy. */
+  fen: string;
+}
+
 export type ExpectedAnswer =
   | SingleSquareAnswer
+  | PieceJourneyAnswer
   | SquareSetAnswer
   | CoordinateAnswer
   | SquareColorAnswer
@@ -127,7 +153,9 @@ export type SubmittedAnswer =
   | { kind: 'square-color'; color: SquareColor | null }
   | { kind: 'choice'; choice: string | null }
   | { kind: 'move'; from: SquareName | null; to: SquareName | null }
-  | { kind: 'square-path'; squares: SquareName[] };
+  | { kind: 'square-path'; squares: SquareName[] }
+  /** The squares the piece was moved through, in order, excluding its origin. */
+  | { kind: 'piece-journey'; path: SquareName[] };
 
 /** Where the answer came from, so voice errors never count as chess errors. */
 export type AnswerSource = 'touch' | 'keypad' | 'voice' | 'drag' | 'timeout';
@@ -208,6 +236,12 @@ export interface Question {
 /** Result of grading one submitted answer. */
 export interface Grade {
   correct: boolean;
+  /**
+   * For journey answers: whether the goal was reached in the fewest moves.
+   * Undefined when the notion does not apply. Solving inefficiently is
+   * recorded as suboptimal, never as a wrong chess answer.
+   */
+  optimal?: boolean;
   /** Squares the user should have selected but did not. */
   missed: SquareName[];
   /** Squares the user selected that were not part of the answer. */
@@ -252,6 +286,8 @@ export interface GeneratorContext {
   revealMs?: number;
   /** Hide the board for visualization practice. */
   hideBoard?: boolean;
+  /** How much extra material sits on the board, where a mode supports it. */
+  density?: 'minimal' | 'standard' | 'crowded';
   /** Show destination hints. */
   showHints?: boolean;
 }
@@ -306,6 +342,16 @@ export interface ModeDefinition {
   supportsPromptVisibility?: boolean;
   /** Whether spoken answers make sense for this mode's answer kind. */
   supportsVoice?: boolean;
+  /** Whether the board-density control applies to this mode. */
+  supportsDensity?: boolean;
+  /**
+   * Whether this mode ever draws a board.
+   *
+   * Square colour and alignment answer from coordinates alone, so orientation
+   * and coordinate-label controls are meaningless for them — showing those
+   * settings implies they do something.
+   */
+  rendersBoard?: boolean;
   /** Generates one question. Must always return a well-formed question. */
   generate: (context: GeneratorContext, rng: Rng, variantId: string) => Question;
 }

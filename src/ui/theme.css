@@ -808,11 +808,61 @@ body {
   font-size: 0.78rem;
 }
 
+/* Listening indicator. Reserved height so turning voice on cannot shift the
+   board and cause a mistap. */
+.voice-line {
+  min-height: 1.2rem;
+}
+
+.voice-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: var(--mark-wrong);
+  animation: voice-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-dot {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/*
+ * Setup footer.
+ *
+ * This was `position: sticky; bottom: 0` with a gradient, which meant option
+ * rows scrolled *underneath* a floating Start button and the button hovered
+ * awkwardly just above the pinned bottom navigation. Raising z-index or
+ * darkening the gradient would only have hidden the overlap.
+ *
+ * It is now an ordinary block at the end of the scroll flow. Nothing can pass
+ * beneath it because it occupies real space, and `.app__main` already reserves
+ * room for the navigation bar plus the gesture inset, so the button clears the
+ * nav without being pinned to it.
+ */
 .setup-start {
-  position: sticky;
-  bottom: 0;
-  padding: var(--gap) 0;
-  background: linear-gradient(to top, var(--surface) 70%, transparent);
+  margin-top: calc(var(--gap) * 1.5);
+  padding-bottom: var(--gap);
+}
+
+.setup-start .button {
+  /* A comfortable primary action on a phone, above the 48dp minimum. */
+  min-height: 52px;
+  font-size: 1.05rem;
 }
 
 .field {

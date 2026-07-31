@@ -10,7 +10,7 @@
  * not proved solvable.
  */
 
-import { attackedSquares } from './geometry';
+import { attackedSquares, geometricTargets } from './geometry';
 import { legalDestinations } from './legal';
 import { fenFromOccupancy, occupancyFromFen, occupancyFromPieces } from './position';
 import { ALL_SQUARES } from './square';
@@ -126,4 +126,129 @@ export function forkPositionFen(pieces: readonly PlacedPiece[], turn: PieceColor
  */
 export function isUsefulForkProblem(solutions: readonly SquareName[], maxSolutions = 6): boolean {
   return solutions.length >= 1 && solutions.length <= maxSolutions;
+}
+
+/* ------------------------------------------------------------------ *
+ * Manoeuvring a piece to a fork square
+ * ------------------------------------------------------------------ */
+
+/**
+ * Squares a piece can slide or leap to while manoeuvring, without capturing.
+ *
+ * Captures are excluded on purpose. The exercise asks the user to *reach* a
+ * square that forks two targets; letting the queen capture would remove a
+ * target mid-problem and change the question underneath them. Keeping the
+ * position fixed is what makes a minimum-move count meaningful.
+ */
+export function journeyMoves(
+  piece: { type: PieceType; color: PieceColor },
+  from: SquareName,
+  occupancy: Occupancy,
+): SquareName[] {
+  const withoutSelf = new Map(occupancy);
+  withoutSelf.delete(from);
+
+  // `blockerPolicy: 'exclude'` stops rays at the first piece and never counts
+  // the occupied square itself, which is exactly "slide to an empty square".
+  return geometricTargets(piece, from, { occupancy: withoutSelf }).filter(
+    (square) => !withoutSelf.has(square),
+  );
+}
+
+/** True when a piece standing on `square` attacks every target. */
+export function forksFrom(
+  piece: { type: PieceType; color: PieceColor },
+  square: SquareName,
+  targets: readonly SquareName[],
+  occupancy: Occupancy,
+): boolean {
+  const withPiece = new Map(occupancy);
+  withPiece.delete(square);
+  withPiece.set(square, { type: piece.type, color: piece.color });
+  return attacksAll(piece, square, targets, withPiece);
+}
+
+export interface JourneyPlan {
+  /** Fewest moves needed to reach a forking square, or null if unreachable. */
+  minMoves: number;
+  /** One shortest route, starting at the origin. */
+  route: SquareName[];
+  /** Every square from which the piece forks the targets and can be reached. */
+  goals: SquareName[];
+}
+
+/**
+ * Breadth-first search for the fewest moves that put a piece on a square
+ * attacking both targets.
+ *
+ * Nodes are squares the piece may occupy; edges are non-capturing moves.
+ * Returns null when no forking square is reachable, which is how the generator
+ * rejects an unsolvable problem before ever showing it.
+ */
+export function planJourney(
+  piece: { type: PieceType; color: PieceColor },
+  from: SquareName,
+  targets: readonly SquareName[],
+  occupancy: Occupancy,
+  maxMoves = 4,
+): JourneyPlan | null {
+  // Already forking: zero moves needed.
+  if (forksFrom(piece, from, targets, occupancy)) {
+    return { minMoves: 0, route: [from], goals: [from] };
+  }
+
+  const previous = new Map<SquareName, SquareName>();
+  const visited = new Set<SquareName>([from]);
+  let frontier: SquareName[] = [from];
+  let depth = 0;
+
+  while (frontier.length > 0 && depth < maxMoves) {
+    depth += 1;
+    const next: SquareName[] = [];
+
+    for (const square of frontier) {
+      // The piece is standing on `square` for this hop.
+      const here = new Map(occupancy);
+      here.delete(from);
+      here.set(square, { type: piece.type, color: piece.color });
+
+      for (const destination of journeyMoves(piece, square, here)) {
+        if (visited.has(destination)) continue;
+        visited.add(destination);
+        previous.set(destination, square);
+
+        if (forksFrom(piece, destination, targets, occupancy)) {
+          const route: SquareName[] = [destination];
+          let current = destination;
+          while (current !== from) {
+            const step = previous.get(current) as SquareName;
+            route.push(step);
+            current = step;
+          }
+          route.reverse();
+
+          return {
+            minMoves: depth,
+            route,
+            goals: collectGoals(piece, targets, occupancy, visited),
+          };
+        }
+
+        next.push(destination);
+      }
+    }
+
+    frontier = next;
+  }
+
+  return null;
+}
+
+function collectGoals(
+  piece: { type: PieceType; color: PieceColor },
+  targets: readonly SquareName[],
+  occupancy: Occupancy,
+  reachable: ReadonlySet<SquareName>,
+): SquareName[] {
+  return [...reachable].filter((square) => forksFrom(piece, square, targets, occupancy)).sort();
 }

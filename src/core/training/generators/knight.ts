@@ -255,6 +255,7 @@ export const knightVisionMode: ModeDefinition = {
     'What the knight attacks, where it can legally go, what it sees after landing, and the same question with no knight on the board.',
   category: 'knight',
   variants: KNIGHT_VARIANTS,
+  rendersBoard: true,
   supportedLayouts: ['empty', 'custom'],
   supportsPromptVisibility: true,
   generate: generateKnightQuestion,
@@ -268,6 +269,7 @@ export const knightRouteMode: ModeDefinition = {
     'Tap squares in order to take the knight to the target. "Fewest moves" requires an optimal route; any valid route is accepted otherwise.',
   category: 'knight',
   variants: KNIGHT_ROUTE_VARIANTS,
+  rendersBoard: true,
   supportedLayouts: ['empty'],
   generate: generateKnightRouteQuestion,
 };

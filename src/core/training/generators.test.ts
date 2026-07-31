@@ -46,6 +46,8 @@ function perfectAnswer(question: Question): SubmittedAnswer {
       return { kind: 'move', from: expected.from, to: expected.to };
     case 'square-path':
       return { kind: 'square-path', squares: expected.exampleRoute.slice(1) };
+    case 'piece-journey':
+      return { kind: 'piece-journey', path: expected.exampleRoute.slice(1) };
   }
 }
 

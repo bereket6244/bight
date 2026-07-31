@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="108" height="108"
+     role="img" aria-label="Bight — board sight">
+  <title>Bight — board sight</title>
+  <desc>
+    A cream eye outline on the dark green board colour, with an iris made from a
+    small alternating chessboard. "Bight" means board sight, so the mark is a
+    board being looked at.
+
+    Drawn on Android's 108dp adaptive-icon canvas. The safe zone is the centre
+    66dp (a circle of radius 33 about 54,54); every part of the eye sits inside
+    it so no mask can clip the artwork.
+
+    The eye outline is an original two-arc lens shape. Its proportions were
+    guided by the Tabler "eye" icon (MIT); no Tabler path data is reused, and
+    the iris is Bight's own chessboard motif. See THIRD_PARTY_NOTICES.md.
+  </desc>
+
+  <defs>
+    <!-- Clips the checker pattern to the circular iris. -->
+    <clipPath id="iris-clip">
+      <circle cx="54" cy="54" r="13.5" />
+    </clipPath>
+    <!-- Clips the highlight to the eye lens. -->
+    <clipPath id="lens-clip">
+      <path d="M 20,54 C 32,36 76,36 88,54 C 76,72 32,72 20,54 Z" />
+    </clipPath>
+  </defs>
+
+  <!-- Board green, matching the app's dark squares. -->
+  <rect width="108" height="108" fill="#2F4A23" />
+
+  <!-- Eye lens: cream fill, bold enough to read at launcher size. -->
+  <path d="M 20,54 C 32,36 76,36 88,54 C 76,72 32,72 20,54 Z" fill="#EBECD0" />
+
+  <!-- Iris: alternating chessboard, the "board" half of board sight. -->
+  <g clip-path="url(#iris-clip)">
+    <rect x="40.5" y="40.5" width="27" height="27" fill="#EBECD0" />
+    <g fill="#2F4A23">
+      <rect x="40.5" y="40.5" width="6.75" height="6.75" />
+      <rect x="54" y="40.5" width="6.75" height="6.75" />
+      <rect x="47.25" y="47.25" width="6.75" height="6.75" />
+      <rect x="60.75" y="47.25" width="6.75" height="6.75" />
+      <rect x="40.5" y="54" width="6.75" height="6.75" />
+      <rect x="54" y="54" width="6.75" height="6.75" />
+      <rect x="47.25" y="60.75" width="6.75" height="6.75" />
+      <rect x="60.75" y="60.75" width="6.75" height="6.75" />
+    </g>
+  </g>
+
+  <!-- Iris edge, to separate the checker from the cream lens. -->
+  <circle cx="54" cy="54" r="13.5" fill="none" stroke="#2F4A23" stroke-width="3" />
+
+  <!-- Lens outline last, so it sits above both fills. -->
+  <path d="M 20,54 C 32,36 76,36 88,54 C 76,72 32,72 20,54 Z"
+        fill="none" stroke="#2F4A23" stroke-width="4.5" stroke-linejoin="round" />
+</svg>

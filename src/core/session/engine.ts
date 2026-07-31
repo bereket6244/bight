@@ -35,8 +35,10 @@ import type {
   SubmittedAnswer,
 } from '../training/types';
 import { knightTargets } from '../chess/geometry';
+import { forksFrom, journeyMoves } from '../chess/fork';
 import { knightDistance } from '../chess/knightRoute';
-import type { Orientation, SquareName } from '../chess/types';
+import { occupancyFromFen } from '../chess/position';
+import type { Orientation, PieceColor, PieceType, SquareName } from '../chess/types';
 import { createRng, type Rng } from '../rng';
 import { questionTimerActive, type SessionSettings } from './settings';
 
@@ -77,6 +79,23 @@ export interface Attempt {
    * questions, not attempts, so retries never shorten a session.
    */
   isRetry: boolean;
+  /**
+   * Journey answers only: solved, but in more moves than necessary. Recorded
+   * separately so it never counts as a wrong chess answer.
+   */
+  suboptimal?: boolean;
+  /**
+   * Move answers only: the square the piece should have been moved *from*.
+   *
+   * Notation questions test two separable things — picking the right piece and
+   * knowing where it goes. Recording only the destination, as the first
+   * version did, made origin-selection skill invisible to the mastery model.
+   */
+  originSquare?: SquareName | null;
+  /** Whether the right piece was chosen, independent of the destination. */
+  originCorrect?: boolean;
+  /** Whether the right destination was chosen, independent of the origin. */
+  destinationCorrect?: boolean;
 }
 
 /** A square the user got wrong, flashed briefly by the UI. */
@@ -97,6 +116,11 @@ export interface SessionState {
   retryQueue: Question[];
   /** Squares selected so far on the current multi-square question, in order. */
   selected: SquareName[];
+  /**
+   * Squares a journey piece has moved through, excluding its origin.
+   * Empty for every other kind of question.
+   */
+  journey: SquareName[];
   /** The most recent wrong input, for a brief red flash. */
   rejected: RejectedInput | null;
   /**
@@ -156,6 +180,7 @@ function generatorContext(state: SessionState, deps: SessionDeps): GeneratorCont
     // every prompt after a second, which is not the default behaviour.
     revealMs: state.settings.promptVisibility === 'flash' ? state.settings.revealMs : undefined,
     hideBoard: state.settings.hideBoard,
+    density: state.settings.density,
     showHints: state.settings.showHints,
   };
 }
@@ -186,6 +211,7 @@ export function startSession(
     attempts: [],
     retryQueue: [],
     selected: [],
+    journey: [],
     rejected: null,
     rejectionCount: 0,
     advanceToken: 0,
@@ -270,7 +296,23 @@ function buildAttempt(
   source: AnswerSource,
   now: number,
 ): Attempt {
+  // Move questions carry two separable skills. Splitting them here is what
+  // lets mastery penalise "picked the wrong knight" differently from
+  // "picked the wrong square".
+  const expected = question.expected;
+  const moveDetail =
+    expected.kind === 'move' && submitted.kind === 'move'
+      ? {
+          originSquare: expected.from,
+          originCorrect: submitted.from === expected.from,
+          destinationCorrect:
+            submitted.to === expected.to ||
+            (expected.alternativeTargets ?? []).includes(submitted.to as SquareName),
+        }
+      : {};
+
   return {
+    ...moveDetail,
     questionId: question.id,
     modeId: question.modeId,
     variantId: question.variantId,
@@ -336,6 +378,7 @@ function completeQuestion(
     streak,
     bestStreak: Math.max(state.bestStreak, streak),
     selected: [],
+    journey: [],
     rejected: null,
     lockedUntil: now + ADVANCE_LOCK_MS,
     advanceToken: state.advanceToken + 1,
@@ -359,10 +402,11 @@ function advanceFrom(state: SessionState, deps: SessionDeps, now: number): Sessi
         questionNumber: state.questionNumber + 1,
         questionStartedAt: now,
         selected: [],
+        journey: [],
         orientationFlip: !state.orientationFlip,
       };
     }
-    return { ...state, phase: 'finished', current: null, selected: [] };
+    return { ...state, phase: 'finished', current: null, selected: [], journey: [] };
   }
 
   const working: SessionState = {
@@ -377,6 +421,7 @@ function advanceFrom(state: SessionState, deps: SessionDeps, now: number): Sessi
     phase: 'question',
     questionStartedAt: now,
     selected: [],
+    journey: [],
   };
 }
 
@@ -451,6 +496,7 @@ export function submitAnswer(
         ? [...state.retryQueue, question]
         : state.retryQueue,
       selected: [],
+      journey: [],
       rejected: null,
       lockedUntil: now + ADVANCE_LOCK_MS,
       advanceToken: state.advanceToken + 1,
@@ -533,6 +579,75 @@ export function selectSquare(
 
   // Single-square questions go through the ordinary submit path.
   return submitAnswer(state, { kind: 'single-square', square }, source, deps, now);
+}
+
+/**
+ * Moves the piece one step in a "play the fork" question.
+ *
+ * Intermediate moves are not mistakes: the piece may need several moves to
+ * reach a forking square, and flashing red on every non-forking move would
+ * punish correct play. Only an *illegal* move is rejected. The question
+ * completes the instant the piece attacks every target.
+ */
+export function moveJourneyPiece(
+  state: SessionState,
+  to: SquareName,
+  source: AnswerSource,
+  deps: SessionDeps = {},
+  now: number = Date.now(),
+): SessionState {
+  if (state.phase !== 'question' || state.current === null) return state;
+  if (isLocked(state, now)) return state;
+
+  const question = state.current;
+  const expected = question.expected;
+  if (expected.kind !== 'piece-journey') return state;
+
+  const from = state.journey[state.journey.length - 1] ?? expected.from;
+  if (to === from) return state;
+
+  // Occupancy with the piece where it currently stands.
+  const occupancy = occupancyFromFen(expected.fen);
+  occupancy.delete(expected.from);
+  const piece = { type: expected.piece, color: expected.color };
+
+  const legal = journeyMoves(piece, from, withPieceAt(occupancy, from, piece));
+  if (!legal.includes(to)) {
+    const submitted: SubmittedAnswer = { kind: 'piece-journey', path: [...state.journey, to] };
+    const attempt = buildAttempt(state, question, submitted, false, [], [to], source, now);
+    return rejectAnswer(state, question, attempt, [to], null);
+  }
+
+  const journey = [...state.journey, to];
+  const forks = forksFrom(piece, to, expected.targets, occupancy);
+
+  if (!forks) {
+    // A legal step that has not arrived yet. No penalty, no advance.
+    return { ...state, journey, rejected: null };
+  }
+
+  const submitted: SubmittedAnswer = { kind: 'piece-journey', path: journey };
+  const attempt = buildAttempt(state, question, submitted, true, [], [], source, now);
+  const graded = gradeQuestion(question, submitted);
+
+  return completeQuestion(
+    { ...state, journey },
+    // Solving the long way round is still solved; the attempt records whether
+    // it was optimal so statistics can tell the difference.
+    { ...attempt, suboptimal: graded.optimal === false },
+    deps,
+    now,
+  );
+}
+
+function withPieceAt(
+  occupancy: ReturnType<typeof occupancyFromFen>,
+  square: SquareName,
+  piece: { type: PieceType; color: PieceColor },
+): ReturnType<typeof occupancyFromFen> {
+  const next = new Map(occupancy);
+  next.set(square, { type: piece.type, color: piece.color });
+  return next;
 }
 
 /** Clears the red flash once the UI has shown it. */

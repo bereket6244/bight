@@ -1,0 +1,137 @@
+# Continuous integration for Bight.
+#
+# Runs the checks that are reliable in a hosted runner. The Android Gradle
+# build is deliberately a separate, non-blocking job: it needs an SDK and a
+# ~40 MB model download, and it has never been verified in CI, so it must not
+# be able to report a false green on the main job. See CODEX_HANDOFF.md.
+#
+# No secrets are required.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    name: Lint, typecheck and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the toolchain the app is built with. Vite 5 and Capacitor 6
+          # both work here; moving to 20 would allow upgrading them.
+          node-version: '18.18'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check version synchronization
+        run: node scripts/sync-version.mjs --check
+
+      - name: Check generated icon resources are current
+        run: node scripts/generate-icons.mjs --check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit and integration tests
+        run: npm test
+
+      - name: Production web build
+        run: npx vite build
+
+      - name: Upload web bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-bundle
+          path: dist/
+          retention-days: 7
+
+  browser:
+    name: Real-browser layout tests
+    runs-on: ubuntu-latest
+    needs: verify
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18.18'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Puppeteer downloads its own Chromium during install; these are the
+      # shared libraries that headless Chromium needs on a bare runner.
+      - name: Install Chromium dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libnss3 libatk-bridge2.0-0 libgtk-3-0 libasound2t64 || \
+          sudo apt-get install -y libnss3 libatk-bridge2.0-0 libgtk-3-0 libasound2
+
+      - name: Layout tests
+        run: npm run test:browser
+
+  android:
+    name: Android APK (best effort)
+    runs-on: ubuntu-latest
+    needs: verify
+    # Never blocks the merge: this path has not been proven in CI, and a
+    # red cross here would be misleading rather than informative.
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18.18'
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Fetch the offline voice model
+        run: npm run fetch:voice-model
+        continue-on-error: true
+
+      - name: Build web bundle
+        run: npx vite build
+
+      - name: Capacitor sync
+        run: npx cap sync android
+
+      - name: Assemble debug APK
+        run: ./gradlew assembleDebug --no-daemon
+        working-directory: android
+
+      - name: Inspect the APK
+        run: npm run inspect:apk -- android/app/build/outputs/apk/debug/app-debug.apk
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME }}
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: bight-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14

@@ -9,6 +9,8 @@ import {
   weakestSquares,
   CONFIDENCE_SAMPLE,
   FAST_MS,
+  REQUIRED_DAYS,
+  REQUIRED_SESSIONS,
   RETENTION_HALF_LIFE_DAYS,
 } from './mastery';
 import {
@@ -104,6 +106,38 @@ function goodRun(square: SquareName, count: number, at = T0): StoredAttempt[] {
   );
 }
 
+/**
+ * A run that satisfies every mastery requirement: enough exposures, spread
+ * over separate sessions and days, in more than one kind of exercise.
+ *
+ * `goodRun` deliberately does not, because cramming in one sitting must not be
+ * enough — that was the bug.
+ */
+function masteringRun(square: SquareName, endingAt = T0): StoredAttempt[] {
+  const out: StoredAttempt[] = [];
+  const modes = ['coordinate-to-square', 'square-to-coordinate', 'knight-vision'];
+
+  for (let session = 0; session < 3; session += 1) {
+    // Each session on its own day, the last one ending "now".
+    const day = endingAt - (2 - session) * DAY;
+    for (let i = 0; i < 5; i += 1) {
+      out.push(
+        att({
+          primarySquare: square,
+          focusSquares: [square],
+          correct: true,
+          responseMs: 900,
+          timestamp: day + i,
+          sessionId: `s${session}`,
+          modeId: modes[session % modes.length] as StoredAttempt['modeId'],
+          orientation: session % 2 === 0 ? 'white' : 'black',
+        }),
+      );
+    }
+  }
+  return out;
+}
+
 describe('mastery scoring', () => {
   it('gives an unseen square a zero score and the unseen level', () => {
     const mastery = fullBoardMastery([], { now: T0 });
@@ -122,10 +156,50 @@ describe('mastery scoring', () => {
     expect(entry?.score).toBeLessThanOrEqual(1 / CONFIDENCE_SAMPLE + 0.001);
   });
 
-  it('reaches mastery only after sustained correct, fast practice', () => {
-    const entry = computeMastery(goodRun('e4', CONFIDENCE_SAMPLE * 2), { now: T0 }).get('e4');
+  it('reaches mastery only with spaced practice across skills', () => {
+    const entry = computeMastery(masteringRun('e4'), { now: T0 }).get('e4');
     expect(entry?.level).toBe('mastered');
     expect(entry?.score).toBeGreaterThanOrEqual(0.9);
+    expect(entry?.sessions).toBeGreaterThanOrEqual(REQUIRED_SESSIONS);
+    expect(entry?.days).toBeGreaterThanOrEqual(REQUIRED_DAYS);
+  });
+
+  /**
+   * The reported bug: ~29 squares showed as mastered after very little work.
+   * Cramming in one sitting must never be enough, however many repetitions.
+   */
+  it('never masters a square from one session, however many repetitions', () => {
+    const entry = computeMastery(goodRun('e4', 40), { now: T0 }).get('e4');
+    expect(entry?.sessions).toBe(1);
+    expect(entry?.level).not.toBe('mastered');
+    expect(entry?.limitedBy).not.toBeNull();
+  });
+
+  it('never masters a square practiced in only one kind of exercise', () => {
+    // Three sessions, two days, but a single skill dimension.
+    const attempts = [0, 1, 2].flatMap((session) =>
+      Array.from({ length: 8 }, (_, i) =>
+        att({
+          primarySquare: 'e4',
+          focusSquares: ['e4'],
+          correct: true,
+          responseMs: 800,
+          timestamp: T0 - (2 - session) * DAY + i,
+          sessionId: `s${session}`,
+          modeId: 'coordinate-to-square',
+        }),
+      ),
+    );
+    const entry = computeMastery(attempts, { now: T0 }).get('e4');
+    expect(entry?.skills.recognition?.attempts).toBeGreaterThan(0);
+    expect(Object.keys(entry?.skills ?? {})).toHaveLength(1);
+    expect(entry?.level).not.toBe('mastered');
+    expect(entry?.limitedBy).toBe('breadth');
+  });
+
+  it('reports what is holding a square back', () => {
+    const oneSession = computeMastery(goodRun('e4', 40), { now: T0 }).get('e4');
+    expect(oneSession?.limitedBy).toBe('spacing');
   });
 
   it('scores a slow but correct square below a fast one', () => {
@@ -248,12 +322,26 @@ describe('weak square selection', () => {
 
 describe('mastery overview', () => {
   it('accounts for all 64 squares', () => {
-    const overview = masteryOverview(goodRun('e4', 12), { now: T0 });
+    const overview = masteryOverview(masteringRun('e4'), { now: T0 });
     const total =
       overview.mastered + overview.strong + overview.familiar + overview.learning + overview.unseen;
     expect(total).toBe(64);
     expect(overview.mastered).toBe(1);
     expect(overview.unseen).toBe(63);
+  });
+
+  it('does not inflate the mastered count after one short session', () => {
+    // Twelve squares, each drilled hard, all in a single sitting.
+    const attempts = ['a1', 'b2', 'c3', 'd4', 'e5', 'f6', 'g7', 'h8', 'a8', 'h1', 'd5', 'e4'].flatMap(
+      (square) => goodRun(square as SquareName, 12),
+    );
+    const overview = masteryOverview(attempts, { now: T0 });
+    expect(overview.mastered).toBe(0);
+  });
+
+  it('reports accuracy per skill dimension', () => {
+    const overview = masteryOverview(masteringRun('e4'), { now: T0 });
+    expect(Object.keys(overview.bySkill).length).toBeGreaterThan(1);
   });
 });
 

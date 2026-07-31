@@ -16,6 +16,7 @@ import { ChoiceButtons, ColorChoice, CoordinateKeypad } from '../components/Coor
 import {
   clearRejection,
   exitSession,
+  moveJourneyPiece,
   pause,
   questionSecondsLeft,
   resume,
@@ -32,8 +33,15 @@ import {
 import type { SessionSettings } from '../../core/session/settings';
 import { describeLimit, describeTimer } from '../../core/session/settings';
 import type { AnswerSource, Question, SubmittedAnswer } from '../../core/training/types';
+import { journeyMoves } from '../../core/chess/fork';
+import { fenPlacementFromOccupancy, occupancyFromFen } from '../../core/chess/position';
 import type { SquareName } from '../../core/chess/types';
 import { practiceWeights } from '../../core/progress/mastery';
+import { findMode } from '../../core/training/registry';
+import { APP_VERSION } from '../../core/version';
+import { normalizeSquare } from '../../core/chess/square';
+import { useVoiceSession } from '../../services/voice/useVoiceSession';
+import { collectDiagnostics, devSeedOverride, isDevDiagnosticsEnabled } from '../../core/dev/diagnostics';
 import { useApp } from '../state/AppContext';
 import { SessionSummaryView } from './SessionSummary';
 import { speak } from '../../services/speech';
@@ -80,7 +88,9 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
 
   useEffect(() => {
     if (settings.adaptive && weights === undefined) return;
-    setState((current) => current ?? startSession(settings, { weights }));
+    // A `?seed=` override makes a reported question reproducible exactly.
+    const seed = devSeedOverride();
+    setState((current) => current ?? startSession(settings, seed === null ? { weights } : { weights, seed }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings, weights]);
 
@@ -133,10 +143,34 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
 
   const tapSquare = useCallback(
     (square: SquareName) => {
-      setState((current) => (current === null ? current : selectSquare(current, square, 'touch', deps)));
+      setState((current) => {
+        if (current === null) return current;
+        // Journey questions move a piece rather than selecting squares.
+        if (current.current?.expected.kind === 'piece-journey') {
+          return moveJourneyPiece(current, square, 'touch', deps);
+        }
+        return selectSquare(current, square, 'touch', deps);
+      });
     },
     [deps],
   );
+
+  /*
+   * Voice input. The microphone opens only while a question is actually on
+   * screen and the user asked for voice on a mode that supports it — never on
+   * the summary, never while paused, and never at launch.
+   */
+  const modeSupportsVoice = findMode(settings.modeId)?.supportsVoice === true;
+  const voiceWanted = settings.voiceInput && modeSupportsVoice;
+  const voiceStatus = useVoiceSession({
+    active: voiceWanted && state?.phase === 'question',
+    question,
+    onCoordinate: (square) => {
+      const normalized = normalizeSquare(square);
+      if (normalized !== null) answer({ kind: 'coordinate', square: normalized }, 'voice');
+    },
+    onColor: (color) => answer({ kind: 'square-color', color }, 'voice'),
+  });
 
   // Persist once, when the session finishes.
   useEffect(() => {
@@ -166,7 +200,7 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
           endedEarly: summary.endedEarly,
           settings: finished.settings,
           schemaVersion: 1,
-          appVersion: '1.0.0',
+          appVersion: APP_VERSION,
         });
         await app.updatePreferences({
           lastModeId: finished.settings.modeId,
@@ -223,6 +257,37 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
     question?.expected.kind === 'square-path'
       ? new Map(state.selected.map((square, index) => [square, index + 1] as const))
       : undefined;
+
+  /*
+   * Journey questions redraw the board with the piece where the user has moved
+   * it to. The question's own FEN is the starting position and never changes,
+   * so the live placement is derived from it plus the moves made so far.
+   */
+  const journeyPosition = (() => {
+    if (question?.expected.kind !== 'piece-journey') return null;
+    const expected = question.expected;
+    const at = state.journey[state.journey.length - 1] ?? expected.from;
+    const occupancy = occupancyFromFen(question.board.fen);
+    occupancy.delete(expected.from);
+    occupancy.set(at, { type: expected.piece, color: expected.color });
+    return { fen: fenPlacementFromOccupancy(occupancy), at };
+  })();
+
+  if (journeyPosition !== null && question !== null && question.expected.kind === 'piece-journey') {
+    // Show where it can go, so a legal-but-not-yet-forking move is obviously
+    // available rather than looking like a mistake waiting to happen.
+    const expected = question.expected;
+    const occupancy = occupancyFromFen(journeyPosition.fen);
+    for (const square of journeyMoves(
+      { type: expected.piece, color: expected.color },
+      journeyPosition.at,
+      occupancy,
+    )) {
+      if (!marks.has(square)) marks.set(square, 'hint');
+    }
+    marks.set(journeyPosition.at, 'origin');
+    for (const square of flashSquares) marks.set(square, 'wrong');
+  }
 
   const remaining =
     question?.expected.kind === 'square-set'
@@ -309,12 +374,28 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
                 {remaining} left
               </p>
             ) : null}
+            {voiceWanted ? (
+              <p className="prompt__detail voice-line" data-testid="voice-line">
+                {voiceStatus.listening ? (
+                  <>
+                    <span className="voice-dot" aria-hidden="true" /> Listening
+                    {voiceStatus.heard !== null
+                      ? ` — heard “${voiceStatus.heard}”${voiceStatus.unclear ? ', not clear enough' : ''}`
+                      : ''}
+                  </>
+                ) : voiceStatus.error !== null ? (
+                  `Voice unavailable: ${voiceStatus.error}. Use the keypad.`
+                ) : (
+                  'Starting the microphone…'
+                )}
+              </p>
+            ) : null}
           </div>
 
           {question !== null ? (
             <Board
               key={question.id}
-              fen={question.board.fen}
+              fen={journeyPosition?.fen ?? question.board.fen}
               orientation={question.board.orientation}
               labels={question.board.labels}
               marks={marks}
@@ -339,6 +420,17 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
             onColor={(color) => answer({ kind: 'square-color', color }, 'touch')}
             onChoice={(choice) => answer({ kind: 'choice', choice }, 'touch')}
           />
+
+          {/* Development only: never present in the packaged APK, because it
+              prints the expected answer. */}
+          {isDevDiagnosticsEnabled() ? (
+            <details className="card" data-testid="dev-diagnostics" style={{ marginTop: 'var(--gap)' }}>
+              <summary className="card__title">Diagnostics</summary>
+              <pre style={{ fontSize: '0.7rem', overflowX: 'auto', whiteSpace: 'pre-wrap' }}>
+                {JSON.stringify(collectDiagnostics(state, app.engine), null, 2)}
+              </pre>
+            </details>
+          ) : null}
 
           <div className="button-row" style={{ marginTop: 'var(--gap)' }}>
             <button

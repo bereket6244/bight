@@ -9,14 +9,16 @@
 | Location | `C:\Users\Bereket\Desktop\bight` |
 | Branch | `main` (the only branch) |
 | Remote | `https://github.com/bereket6244/bight` (private) |
-| Commits | 10 |
+| Commits | 14 |
 
 ## Application
 
 | | |
 | --- | --- |
 | App name | Bight |
-| Version | 1.0.0 |
+| Version | **1.3.0** (source of truth: src/core/version.ts) |
+| Android versionCode | 10300 |
+| Storage schema | 1 (unchanged) |
 | Package identifier | `io.github.bereketgirma.bight` |
 | Target | Android, portrait, edge-to-edge |
 | Min / target SDK | Capacitor 6 defaults (min 22, target 34) |
@@ -48,8 +50,8 @@ Node 20 or newer.
 | --- | --- |
 | Path | `release/Bight.apk` |
 | Variant | debug (debug-signed) |
-| Size | **54.36 MB** (57,002,115 bytes) |
-| SHA-256 | `cd296591b085d6022577d6c709698ab4998dcb2a0e6b481cde8e7fef57e8ceee` |
+| Size | **54.17 MB** (56,805,062 bytes) |
+| SHA-256 | `154a82d97c26aaa0bd5fe745f831425a07b5cc5fbff097cd841da04884e8504e` |
 | Gradle result | `BUILD SUCCESSFUL` — 267 actionable tasks |
 
 **Verified APK contents** (read back out of the built archive, not assumed):
@@ -60,7 +62,7 @@ Node 20 or newer.
 | `assets/public/index.html` + JS/CSS bundles | web app |
 | `assets/public/models/vosk-model-small-en-us-0.15.tar` | 70.9 MB uncompressed, 42.5 MB in-APK |
 | `META-INF/CERT.SF`, `META-INF/CERT.RSA` | debug signature present |
-| Total entries | 521 |
+| Total entries | 513 |
 
 Most of the 54 MB is the offline speech model. Without it the APK is 13.7 MB.
 
@@ -142,7 +144,7 @@ These are stated plainly rather than buried:
 1. **No emulator or device testing.** No Android emulator, no system image,
    and no device connected over ADB. The APK builds and is installable, but
    **it has never been launched**. Layout was verified in a real browser at
-   412×915 and 360×640; behaviour was verified by 555 automated tests.
+   412×915 and 360×640; behaviour was verified by 637 automated tests and 24 real-browser layout checks.
 
 2. **Voice audio path unverified.** Grammar and parsing have 29 passing tests
    and the model is packaged, but Vosk WASM loading, microphone capture and

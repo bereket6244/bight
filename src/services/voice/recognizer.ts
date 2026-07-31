@@ -61,6 +61,40 @@ let cachedModel: VoskModel | null = null;
 let cachedFailure: string | null = null;
 
 /**
+ * Whether the model and library are present, with no microphone involvement.
+ *
+ * Deliberately separate from permission. The first implementation folded the
+ * two together and reported "Ready" when only these were true, which is how
+ * the app came to claim voice was working before it had ever asked for a
+ * microphone.
+ */
+export async function checkModelAvailability(): Promise<'ok' | 'no-model' | 'no-library'> {
+  if (typeof window === 'undefined') return 'no-library';
+
+  if (resolvedModelPath === null) {
+    for (const candidate of MODEL_PATHS) {
+      try {
+        const response = await fetch(candidate, { method: 'HEAD' });
+        if (response.ok) {
+          resolvedModelPath = candidate;
+          break;
+        }
+      } catch {
+        // Try the next candidate.
+      }
+    }
+  }
+  if (resolvedModelPath === null) return 'no-model';
+
+  try {
+    await import('vosk-browser');
+  } catch {
+    return 'no-library';
+  }
+  return 'ok';
+}
+
+/**
  * Checks whether recognition could run, without asking for the microphone.
  * Permission is only requested when a session actually starts listening.
  */

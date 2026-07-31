@@ -1,4 +1,119 @@
 # Bight test report
+
+---
+
+# Third pass test report
+
+## Baseline before any change
+
+`main` @ `eec4534`, version 1.0.0. Lint clean, typecheck clean,
+**555 tests passing**. One test was intermittently failing (~1 run in 64) and
+was fixed during the pass.
+
+## Final commands
+
+```bash
+npm run verify
+```
+Runs version sync check, icon freshness check, lint, typecheck and the suite.
+**Pass** — 0 lint errors, 0 type errors, **637 tests in 21 files**.
+
+```bash
+npm run test:browser
+```
+**Pass** — **24 real-browser layout checks**, 4 viewports.
+
+```bash
+npm run android:build && npm run inspect:apk
+```
+**Pass** — `BUILD SUCCESSFUL`, 267 tasks.
+
+| | |
+| --- | --- |
+| Path | `release/Bight.apk` |
+| Size | 54.17 MB (56,805,062 bytes) |
+| SHA-256 | `154a82d97c26aaa0bd5fe745f831425a07b5cc5fbff097cd841da04884e8504e` |
+| Entries | 513 |
+| Manifest | `versionCode='10300' versionName='1.3.0'`, package `io.github.bereketgirma.bight` |
+| Icons | `mipmap-anydpi-v21` + `mipmap-anydpi-v26` present; **0** stock PNG launcher icons |
+| Voice model | `assets/public/models/vosk-model-small-en-us-0.15.tar` |
+| Signature | `META-INF/CERT.SF`, `META-INF/CERT.RSA` (debug) |
+
+## Test counts
+
+| File | Tests | Covers |
+| --- | ---: | --- |
+| `core/training/generators/fork.generator.test.ts` | 36 | No a1/h8 fallback, distinct boards, density, answer kinds, solution recomputation, journeys |
+| `core/chess/fork.test.ts` | 27 | Fork geometry, all-pairs cross-check, BFS journeys, blockers, pins |
+| `core/session/coverage.test.ts` | 12 | Full-board coverage, adaptive bounds, immediate repeats, retry queue |
+| `services/voice/state.test.ts` | 14 | Voice state machine, preference reconciliation, no false "Ready" |
+| `src/thirdPass.test.ts` | 19 | Version sync, branding, handoff files, gated diagnostics |
+| `core/progress/progress.test.ts` | 47 | Mastery incl. anti-inflation, skills, spacing |
+| *(existing suites)* | ~482 | Chess core, engine, storage, backup, generators, UI |
+| **Total** | **637** | |
+
+## Real-browser layout verification
+
+Driven with Puppeteer against the dev server. jsdom cannot answer these — it
+has no layout engine.
+
+| Viewport | Nav pinned while scrolling | No control under Start (More open) | Start clear of nav | Start scrollable into view | No horizontal overflow |
+| --- | --- | --- | --- | --- | --- |
+| 360×640 | pass | pass | pass | pass | pass |
+| 412×915 | pass | pass | pass | pass | pass |
+| 480×1080 (S25-Ultra-class) | pass | pass | pass | pass | pass |
+| 915×412 (landscape) | pass | pass | pass | pass | pass |
+
+The Start check samples five scroll positions and tests every
+`.segmented__item`, `.chip`, toggle input and `.setup-row__label` for
+intersection with the Start button's rectangle.
+
+## Manual browser review (Chromium, 412×915)
+
+| Check | Result |
+| --- | --- |
+| Queen Fork "Play the fork" | "Move the queen to attack both f3 and e5", **15 pieces**, 6 legal-move hints |
+| Setup controls shown | Exercise, Orientation, Coordinate labels, **Board material**, Session length, How many, Time per question |
+| Illegal queen move | Flashed red on a8; question unchanged; queen stayed on h3 |
+| Legal non-forking moves | h8, h7, h6, h5, h4 all accepted **silently** — no red flash, queen position updated each time |
+| Reaching the fork | g3 completed the question and loaded a **new** one with **new** targets (g7, b8) |
+| Settings audio controls | Four independent: sound effects, haptics, spoken prompts, voice answers |
+| Voice status | Badge "Blocked", checkbox off, message "Microphone access is blocked for this app" |
+| False "Ready" claim | **Absent** — the status never says "runs on this device" unless usable |
+
+## Reproduction evidence for the Queen Fork bug
+
+Measured over 200 seeds, before and after:
+
+| | Before | After |
+| --- | ---: | ---: |
+| a1/h8 fallback questions | 200 / 200 | **0 / 200** |
+| Distinct boards | 1 / 200 | **200 / 200** |
+| Board piece count (min–max) | 2 – 2 | **8 – 14** |
+| "move" variant with wrong answer kind | 200 / 200 | **0 / 60** |
+
+## Flaky test fixed
+
+`advances immediately on a correct keypad answer` waited for the prompt square
+to *change*, which fails about 1 run in 64 when the next question picks the
+same square. It now asserts on the session progress counter. Three consecutive
+clean runs confirmed.
+
+## Not verified — hardware only
+
+- The app running on an Android device or emulator **at all**.
+- Vosk WASM loading, microphone capture, recognition accuracy. The permission
+  layer is written around Android WebView timing that cannot be exercised here.
+- The SQLite repository (needs a native platform).
+- Android 15 edge-to-edge, gesture navigation, keyboard resize against the
+  `100dvh` shell.
+- Drag-and-drop gestures (jsdom has no drag data transfer).
+- Backup file picker through the Storage Access Framework.
+- Launcher icon rendering under circular, squircle, rounded-square and square
+  masks, and as a themed monochrome icon. The resources are present and
+  correctly declared in the APK, but no launcher has drawn them.
+
+
 ---
 
 # Second pass test report

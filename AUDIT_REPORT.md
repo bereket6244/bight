@@ -15,6 +15,218 @@ rather than being described as done.
 
 ---
 
+---
+
+# Third pass: bugs reported from real Android use
+
+Every item below was reported from the device, reproduced here first, fixed,
+and pinned by a regression test.
+
+## 1. Queen Fork was one repeated question
+
+**Observed**: the same two rooks in opposite corners for a whole 20-question
+session; tapping a valid fork square did not reliably produce a new problem.
+
+**Reproduced** before changing anything, over 200 seeds:
+
+| Measurement | Before |
+| --- | --- |
+| Questions that were the hard-coded a1/h8 fallback | **200 / 200** |
+| Distinct boards | **1 / 200** |
+| Pieces on the board | **2** (min and max) |
+| "move" variant producing a non-move answer kind | **200 / 200** |
+
+**Verified cause**: `buildProblem()` picked two *random* targets and rejected
+any problem whose solution count exceeded three. For a queen, two random
+squares are forked from far more than three squares, so every attempt was
+rejected, all 120 retries failed, and the hard-coded emergency board was
+returned. The "move" variant's loop then fell out into the shared placement
+code, so a move question was graded as a square question.
+
+**Fix**: generation is now **constructive** — pick the forking square first,
+choose targets from what it attacks, scatter decoys, then recompute the
+solution set against the final board. A solution exists by construction. The
+fixed fallback is **deleted**: if generation genuinely fails it throws and the
+mode's error boundary isolates it.
+
+| Measurement | After |
+| --- | --- |
+| a1/h8 fallback | **0 / 200** |
+| Distinct boards | **200 / 200** |
+| Pieces on the board | **8–14** |
+| "play" variant answer kind | `piece-journey`, 60/60 seeds |
+
+**Tests**: 36 in `fork.generator.test.ts`, including that every listed solution
+genuinely forks on the final board, that the stored set equals a fresh
+recomputation (decoys can block a queen's line), and that no decoy ever lands
+on a solution square.
+
+## 2. Multi-move queen navigation (§4D, §4E)
+
+Implemented in full, not deferred.
+
+- The piece **slides to empty squares only** while manoeuvring. Capturing a
+  target would delete the question underneath the user, and it is what makes a
+  minimum-move count meaningful.
+- Legal moves that do not yet fork are **not** mistakes and never flash red.
+- Only an *illegal* move is rejected.
+- `planJourney()` runs breadth-first search over the piece's move graph, proves
+  a forking square is reachable, and records `minMoves`. A problem with no
+  reachable fork is discarded before it is ever shown.
+- Solving in more than the minimum is recorded as `suboptimal` on the attempt —
+  **not** as a wrong chess answer.
+
+**Verified live**: five consecutive legal non-forking moves were accepted
+silently with the queen's position updating each time; the sixth reached the
+fork and advanced to a new question with new targets.
+
+## 3. Start button overlapped setup controls
+
+**Verified cause**: `.setup-start` was `position: sticky; bottom: 0` inside the
+same scroll container as the option rows, so rows slid underneath it and the
+button hovered above the pinned navigation.
+
+**Fix**: an ordinary block at the end of the scroll flow. It occupies real
+space, so nothing can pass beneath it, and `.app__main` already reserves room
+for the navigation plus the gesture inset.
+
+**Tests**: 24 real-browser checks across 360×640, 412×915, 480×1080 and
+landscape — with **More settings expanded** — asserting that no segmented
+control, chip, toggle or label intersects the Start button at any scroll
+position, that Start never overlaps the navigation, and that it can be
+scrolled fully into view.
+
+## 4. Voice answers could never be enabled
+
+**Observed on a real device**: Settings showed "Voice answers" checked and
+"Ready — recognition runs on this device" before any permission dialog. After
+granting "While using this app", the app reported "Voice answers need
+microphone permission", the checkbox stayed off, and a message flashed at the
+bottom of the screen.
+
+**The previous audit's claim that voice was "implemented, model packaged" was
+misleading.** It was not merely unverified — it could not have worked.
+
+**Verified causes**, all three confirmed in the code:
+
+1. `checkVoiceAvailability()` returned `ready` when the **model and library**
+   were present. It never consulted microphone permission. "Ready" was a claim
+   the app had not earned.
+2. The stored `voiceInput: true` was rendered directly as the checkbox, so a
+   preference from a previous install showed voice as on with nothing behind it.
+3. **`startListening()` was called from nowhere in the entire application.**
+   Even with permission granted, no session would ever have opened the
+   microphone. Turning voice on did nothing at all.
+
+A fourth cause was addressed defensively: permission was inferred from a single
+`getUserMedia()` call, which an Android WebView can reject while its own dialog
+is still on screen — so a grant arriving moments later was never noticed.
+
+**Fixes**:
+
+- An explicit 13-state machine (`services/voice/state.ts`). `ready` now means
+  model **and** library **and** permission **and** a stream that actually
+  opened. A test asserts no non-usable state ever says "runs on this device".
+- The checkbox renders `effectiveVoiceEnabled(preference, state)`, never the
+  raw preference.
+- `services/voice/permission.ts` re-queries the Permissions API after a
+  rejection and retries once, then re-checks on `visibilitychange` and on the
+  Capacitor `resume` event — the moment an Android grant becomes visible.
+- `useVoiceSession` wires the recognizer into sessions for the first time:
+  grammar rebuilt per question, confident results routed to the same grader
+  touch input uses, microphone released on pause, exit, completion and unmount.
+- Low confidence, silence and recognizer failure are never chess mistakes.
+- The error row is stable and actionable, with a Retry, rather than a message
+  that flashes and vanishes.
+
+**Still unproven**: no audio has ever gone through this. See the hardware
+section.
+
+## 5. Mastery was far too generous
+
+**Observed**: ~29 squares reported as mastered after little practice.
+
+**Verified causes**: confidence maxed out at six attempts; a 0.9 score counted
+as mastered; every appearance of a square counted identically; and mastery read
+only `primarySquare`, which for a notation question is the *destination* — so
+"which knight moves there" contributed nothing.
+
+**Fix**: `score = skill × confidence × spacing × breadth × retention`, all
+0..1 and multiplied, so no single dimension can carry a square.
+
+| Requirement | Before | After |
+| --- | --- | --- |
+| Exposures for full confidence | 6 | 12 |
+| Distinct sessions | none | 3 |
+| Distinct days | none | 2 |
+| Distinct skill dimensions | none | 2 |
+
+Notation attempts now credit **two** squares independently: origin (piece
+selection) and destination (square knowledge). Choosing the wrong knight but
+the right square penalises origin knowledge without punishing destination
+knowledge.
+
+**Tests** include "never masters a square from one session, however many
+repetitions" and "does not inflate the mastered count after one short session"
+(twelve squares drilled hard in one sitting → **0** mastered).
+
+## 6. Knight and fork boards were too sparse
+
+Fork boards now carry 8–14 pieces at the default Standard density, with
+Minimal and Crowded available. Decoys are validated individually: any piece
+that would break the fork is rejected, and the solution set is recomputed after
+every piece is placed.
+
+## 7. Question repetition
+
+Investigated rather than "fixed", because the reported repetition is largely
+correct behaviour from "Ask missed questions again later" and adaptive
+weighting.
+
+Verified by deterministic statistical tests: all 64 squares reached over a
+1200-question seeded run; every square still reachable with one square weighted
+to the cap; no square exceeding 35% of a session under heavy weighting;
+back-to-back repeats under 5%; the retry queue always drains; disabling retry
+removes retry-driven repeats entirely.
+
+## 8. Versioning
+
+`src/core/version.ts` is now the single source of truth, propagated by
+`npm run sync:version` and asserted by test. The hard-coded `'1.0.0'` in
+session persistence is gone, and a test forbids any version literal outside
+`version.ts`. Now 1.3.0 / versionCode 10300, confirmed in the built APK's
+manifest.
+
+## 9. Launcher icon
+
+Original artwork: a cream eye whose iris is a small chessboard, on Bight's
+board green. Adaptive foreground, adaptive background, themed monochrome,
+round, and a pre-API-26 vector fallback — all regenerated from SVG by
+`npm run icons`.
+
+The stock Capacitor icons are gone, **including** `drawable-v24/
+ic_launcher_foreground.xml`, which would otherwise have overridden the new icon
+on API 24+. Verified in the built APK: `mipmap-anydpi-v21` and
+`mipmap-anydpi-v26` present, zero stock PNGs.
+
+## Hardware status — corrected and unchanged
+
+There is still **no Android device or emulator** on the build machine. The APK
+builds, is debug-signed, and its contents are verified by reading the archive
+back — but **it has never been launched**.
+
+The second-pass audit described voice as "implemented; audio path unverified".
+That was too generous: `startListening()` was never called, so the feature
+could not have worked regardless of hardware. This audit corrects that.
+
+Never executed: the app running on Android at all; Vosk WASM loading;
+microphone capture; recognition accuracy; the SQLite repository; Android 15
+edge-to-edge and gesture navigation; keyboard resize; drag gestures; the backup
+file picker. `CODEX_HANDOFF.md` lists the exact device steps to run.
+
+
+---
+
 # Second pass: training-value audit and redesign
 
 The first release shipped 11 modes exposing **42 variant cards**. Several
