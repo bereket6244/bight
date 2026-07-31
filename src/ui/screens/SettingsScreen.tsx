@@ -19,6 +19,7 @@ import { exportBackup, importBackup, inspectBackup } from '../../core/backup/ser
 import { backupFilename } from '../../core/backup/format';
 import { useApp } from '../state/AppContext';
 import { APP_VERSION, PACKAGE_ID } from '../../core/version';
+import { ENGINE_BUILD, ENGINE_PACKAGE_VERSION } from '../../services/engine';
 import { useVoiceCapability } from '../../services/voice/useVoice';
 import { effectiveVoiceEnabled, isVoiceUsable, voiceBadgeText } from '../../services/voice/state';
 import { speechAvailable } from '../../services/speech';
@@ -348,6 +349,15 @@ export function SettingsScreen() {
         ) : null}
         <p className="card__subtitle" style={{ marginTop: 8 }}>
           Works offline. No account, no server, no ads, no analytics.
+        </p>
+        {/* This build bundles Stockfish, which is GPLv3. Saying so in the app
+            is part of the obligation, not decoration. */}
+        <p className="card__subtitle" style={{ marginTop: 8 }} data-testid="about-licence">
+          This build includes Stockfish {ENGINE_PACKAGE_VERSION} ({ENGINE_BUILD}), which is
+          free software under the GNU GPL v3. The application is distributed under the GPL
+          v3 as a whole; Bight&rsquo;s own code is also available under the MIT licence.
+          The full licence texts and the engine&rsquo;s source location ship with the
+          repository.
         </p>
       </div>
     </div>

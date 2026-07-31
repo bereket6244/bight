@@ -7,18 +7,18 @@
 | | |
 | --- | --- |
 | Location | `C:\Users\Bereket\Desktop\bight` |
-| Branch | `main` (the only branch) |
+| Branch | `feature/blindfold-stockfish-handoff` |
 | Remote | `https://github.com/bereket6244/bight` (private) |
-| Commits | 14 |
+| Base | `main` @ `5838304` |
 
 ## Application
 
 | | |
 | --- | --- |
 | App name | Bight |
-| Version | **1.3.0** (source of truth: src/core/version.ts) |
-| Android versionCode | 10300 |
-| Storage schema | 1 (unchanged) |
+| Version | **1.4.0** (source of truth: src/core/version.ts) |
+| Android versionCode | 10400 |
+| Storage schema | 1 (unchanged — the new attempt fields are optional) |
 | Package identifier | `io.github.bereketgirma.bight` |
 | Target | Android, portrait, edge-to-edge |
 | Min / target SDK | Capacitor 6 defaults (min 22, target 34) |
@@ -26,6 +26,39 @@
 
 The package id follows the `io.github.<owner>.bight` convention the brief
 suggested, derived from the repository owner.
+
+## Licensing on this branch
+
+**This branch is GPLv3, because it bundles Stockfish.** `main` is MIT and ships
+no engine. The distributed application is offered as a whole under GPLv3;
+Bight's own code remains available under MIT in `LICENSE-MIT`. See
+`GPL_COMPLIANCE.md`, `ENGINE_SOURCE.md` and `ENGINE_LICENSES.md`.
+
+## The two APKs in `release/`
+
+| File | Size | SHA-256 | Engine | Licence |
+| --- | --- | --- | --- | --- |
+| `Bight.apk` | 59.89 MB | `c26ef94b4a76e159963fd8e59fa470d1cd438fe54000159264807b7222958a8e` | Stockfish 18 lite single-threaded | GPLv3 |
+| `Bight-blindfold-checkpoint.apk` | 54.31 MB | `55a36c07eb5a53b47054cc5522b529a15c20fdad7bb9c6abd0a0d56fc32ad7d2` | none | MIT |
+
+The checkpoint APK is the Phase A build, kept deliberately: if the engine ever
+needs withdrawing, a known-good engine-free build already exists and does not
+need rebuilding. Both are **debug-signed** — no production signing key exists
+for this project, and none was fabricated.
+
+## Engine assets
+
+| | |
+| --- | --- |
+| Package | `stockfish@18.0.8`, pinned exactly |
+| Build | lite single-threaded WebAssembly |
+| Worker script | `stockfish-18-lite-single.js`, 21,429 bytes |
+| WebAssembly | `stockfish-18-lite-single.wasm`, 7,295,411 bytes |
+| In the APK | `assets/public/engine/`, asserted by `scripts/inspect-apk.mjs` |
+| Network at runtime | none |
+
+Assets are copied from `node_modules` by `scripts/prepare-engine.mjs` and are
+not committed, the same treatment the Vosk voice model gets.
 
 ## Toolchain used for this build
 
@@ -50,8 +83,8 @@ Node 20 or newer.
 | --- | --- |
 | Path | `release/Bight.apk` |
 | Variant | debug (debug-signed) |
-| Size | **54.17 MB** (56,805,062 bytes) |
-| SHA-256 | `154a82d97c26aaa0bd5fe745f831425a07b5cc5fbff097cd841da04884e8504e` |
+| Size | **59.89 MB** (62,800,533 bytes) |
+| SHA-256 | `c26ef94b4a76e159963fd8e59fa470d1cd438fe54000159264807b7222958a8e` |
 | Gradle result | `BUILD SUCCESSFUL` — 267 actionable tasks |
 
 **Verified APK contents** (read back out of the built archive, not assumed):
@@ -61,10 +94,13 @@ Node 20 or newer.
 | `classes.dex` + 3 more | 10.0 MB total |
 | `assets/public/index.html` + JS/CSS bundles | web app |
 | `assets/public/models/vosk-model-small-en-us-0.15.tar` | 70.9 MB uncompressed, 42.5 MB in-APK |
+| `assets/public/engine/stockfish-18-lite-single.wasm` | 7.0 MB |
+| `assets/public/engine/stockfish-18-lite-single.js` | 21 KB |
 | `META-INF/CERT.SF`, `META-INF/CERT.RSA` | debug signature present |
-| Total entries | 513 |
+| Total entries | 517 |
 
-Most of the 54 MB is the offline speech model. Without it the APK is 13.7 MB.
+Most of the 60 MB is the offline speech model (42.5 MB in-APK) and the chess
+engine (about 5.5 MB in-APK). Without either, the app itself is around 13.7 MB.
 
 The APK is debug-signed, which the brief accepts. **No production signing key
 is committed**, and none should be — `*.jks`, `*.keystore` and

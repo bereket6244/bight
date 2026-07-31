@@ -25,6 +25,7 @@ import { knightForkMode, queenForkMode } from './generators/fork';
 import { notationMode } from './generators/notation';
 import { alignmentMode, blockerMode, pieceVisionMode } from './generators/pieces';
 import {
+  blindfoldEngineGameMode,
   blindfoldProgressiveMode,
   blindfoldReconstructionMode,
   blindfoldTrackingMode,
@@ -46,6 +47,7 @@ export const MODES: readonly ModeDefinition[] = Object.freeze([
   blindfoldTrackingMode,
   blindfoldReconstructionMode,
   blindfoldProgressiveMode,
+  blindfoldEngineGameMode,
 ]);
 
 const MODE_BY_ID = new Map<ModeId, ModeDefinition>(MODES.map((mode) => [mode.id, mode]));
@@ -76,6 +78,19 @@ export function defaultVariantId(modeId: ModeId): string {
 
 export function allModeVariants(): Array<{ mode: ModeDefinition; variant: ModeVariant }> {
   return MODES.flatMap((mode) => mode.variants.map((variant) => ({ mode, variant })));
+}
+
+/**
+ * Every mode that produces questions, which is every mode except the engine
+ * game.
+ *
+ * The generator contract, the session screen and the "open every mode" sweeps
+ * all mean this set rather than `allModeVariants()`. A game against the engine
+ * has no generator and no expected answer, so asking it to satisfy a question
+ * contract would be asking the wrong question.
+ */
+export function questionModeVariants(): Array<{ mode: ModeDefinition; variant: ModeVariant }> {
+  return allModeVariants().filter(({ mode }) => mode.isEngineGame !== true);
 }
 
 /** Modes grouped for the browser, in a stable display order. */

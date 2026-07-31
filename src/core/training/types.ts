@@ -36,7 +36,8 @@ export type ModeId =
   | 'alignment'
   | 'blindfold-tracking'
   | 'blindfold-reconstruction'
-  | 'blindfold-progressive';
+  | 'blindfold-progressive'
+  | 'blindfold-engine-game';
 
 /** How the user supplies an answer, which decides the answer control shown. */
 export type AnswerKind =
@@ -465,6 +466,14 @@ export interface ModeDefinition {
   supportsDensity?: boolean;
   /** Whether the blindfold controls (plies, pacing, visibility) apply. */
   supportsBlindfold?: boolean;
+  /**
+   * This mode is a game against the engine, not a stream of questions.
+   *
+   * It has its own screen and its own settings, so the session machinery every
+   * other mode depends on never sees engine failures at all. The flag is what
+   * the app routes on.
+   */
+  isEngineGame?: boolean;
   /**
    * Whether this mode ever draws a board.
    *

@@ -43,6 +43,8 @@ const dex = entries.filter((e) => /^classes\d*\.dex$/.test(e));
 const model = entries.filter((e) => e.includes('vosk-model'));
 const signature = entries.filter((e) => e.startsWith('META-INF/') && /\.(RSA|SF)$/.test(e));
 const webAssets = entries.filter((e) => e.startsWith('assets/public/'));
+const engine = entries.filter((e) => e.includes('assets/public/engine/'));
+const engineWasm = engine.filter((e) => e.endsWith('.wasm'));
 
 console.log('─'.repeat(64));
 console.log(`APK:        ${apk}`);
@@ -52,6 +54,9 @@ console.log(`Entries:    ${entries.length}`);
 console.log(`Dex:        ${dex.join(', ') || 'MISSING'}`);
 console.log(`Web assets: ${webAssets.length} (index.html ${entries.includes('assets/public/index.html') ? 'present' : 'MISSING'})`);
 console.log(`Voice model:${model.length > 0 ? ` ${model.join(', ')}` : ' NONE'}`);
+console.log(
+  `Engine:     ${engine.length > 0 ? `${engine.length} files, wasm ${engineWasm.length > 0 ? 'present' : 'MISSING'}` : 'NONE (engine-free build)'}`,
+);
 console.log(`Signature:  ${signature.join(', ') || 'UNSIGNED'}`);
 console.log('─'.repeat(64));
 
@@ -59,6 +64,15 @@ const problems = [];
 if (dex.length === 0) problems.push('no classes.dex');
 if (!entries.includes('assets/public/index.html')) problems.push('no web bundle');
 if (signature.length === 0) problems.push('unsigned');
+// The engine is loaded from a local path with no network fallback, so a build
+// that ships the worker script without its WebAssembly would fail at the point
+// the user taps the mode. Either both are there or neither is.
+if (engine.length > 0 && engineWasm.length === 0) {
+  problems.push('engine worker present but its wasm is missing');
+}
+if (engineWasm.length > 0 && !engine.some((e) => e.endsWith('.js'))) {
+  problems.push('engine wasm present but its worker script is missing');
+}
 if (problems.length > 0) {
   console.error(`FAILED: ${problems.join(', ')}`);
   process.exit(1);

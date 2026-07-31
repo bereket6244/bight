@@ -53,3 +53,7 @@ local.properties
 public/models/vosk-*/
 public/models/*.zip
 public/models/*.tar.gz
+
+# Stockfish engine assets are copied out of node_modules by
+# scripts/prepare-engine.mjs. 7 MB of WebAssembly should not be in git.
+public/engine/

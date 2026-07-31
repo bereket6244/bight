@@ -2,6 +2,85 @@
 
 ---
 
+# Engine pass test report (Phase B, this branch only)
+
+## Commands
+
+```bash
+npx tsc --noEmit && npx eslint src scripts --ext .ts,.tsx,.mjs
+```
+**Pass** — 0 type errors, 0 lint errors.
+
+```bash
+npx vitest run
+```
+**Pass** — **875 tests in 32 files**, up from 800 in 29.
+
+```bash
+node scripts/engine-smoke.mjs           # dev server
+node scripts/engine-smoke.mjs --dist    # production build
+```
+**Pass** — 8 checks each. Boots in 229 ms (dev) and 205 ms (production),
+identifies itself as `Stockfish 18 Lite WASM`, finds mate in one from
+`6k1/5ppp/8/8/8/8/5PPP/R5K1 w`, still answers at Skill Level 0, and the wasm is
+served as `application/wasm`.
+
+```bash
+node scripts/engine-game-check.mjs
+```
+**Pass** — a real game against the real engine in real Chromium, against the
+production build. One run's moves: `1. e4 d5 2. Nf3 e6 3. Bc4 dxc4`, with the
+capture correctly reported as "took a bishop".
+
+```bash
+node scripts/inspect-apk.mjs
+```
+**Pass** — `Engine: 4 files, wasm present`. APK 59.89 MB, up from 54.31 MB.
+
+## New tests
+
+| File | Tests | Covers |
+| --- | --- | --- |
+| `services/engine/engine.test.ts` | 35 | UCI parsing against garbage and truncation, timeouts, worker crashes, stale replies dropped, dispose, and the handshake race below |
+| `core/engineGame/game.test.ts` | 26 | chess.js as the only authority: illegal engine moves refused, malformed output refused, promotion, every way a game ends |
+| `ui/EngineGame.integration.test.tsx` | 14 | the screen with an injected engine that fails to start, returns an illegal move, or stops answering |
+
+The unit tests drive a scripted fake Worker. The failure modes that matter —
+a search that never answers, a worker that dies, a reply arriving after its
+request was abandoned — are close to impossible to trigger reliably with the
+real engine and trivial to trigger with a fake. Whether the real engine works
+is a separate question, answered by the two scripts above.
+
+## Two bugs found by playing for real
+
+Both were invisible to the unit tests and to the smoke test, and both appeared
+the first time a whole game was played through the actual screen:
+
+1. **The game ended on the user's first move.** The board went live before the
+   engine had finished booting, so a move played during the handshake issued a
+   search that collided with it — `the engine is already waiting for a reply`.
+   Fixed twice over: the handshake now goes through the same serialising queue
+   as every other exchange, so a racing caller queues instead of colliding; and
+   the screen refuses input, showing "Starting the engine…", until the engine
+   is ready. Both are covered by regression tests.
+2. **An engine turn was started inside a `setState` updater.** React may replay
+   an updater when a render is interrupted, so the side effect could run twice.
+   Moved out of the updater.
+
+The first was diagnosed by tracing the real call sequence in the browser rather
+than by reasoning about it. Two earlier guesses at the cause were both wrong,
+and both were disproved by a test before being acted on.
+
+## Not verified
+
+- **No emulator or device run.** The engine has not been exercised on Android
+  hardware. Whether 7 MB of WebAssembly loads acceptably in a real Android
+  WebView is **unmeasured**.
+- **Playing strength is uncalibrated.** The four difficulty labels describe how
+  each level plays; no Elo is claimed, because none was measured.
+
+---
+
 # Blindfold pass test report (1.4.0)
 
 ## Baseline before any change

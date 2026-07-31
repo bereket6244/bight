@@ -827,3 +827,43 @@ export const blindfoldProgressiveMode: ModeDefinition = {
   supportsBlindfold: true,
   generate: generateProgressiveQuestion,
 };
+
+/* ------------------------------------------------------------------ *
+ * Blindfold vs Computer
+ * ------------------------------------------------------------------ */
+
+/**
+ * A whole game against the offline engine.
+ *
+ * This mode has no generator. A game is not a stream of questions, so it runs
+ * on its own screen with its own state, and `generate` exists only because the
+ * registry's shape requires it. Throwing here rather than returning a dummy
+ * question is deliberate: if anything ever routes this mode into the ordinary
+ * session machinery, it should fail loudly and immediately rather than
+ * silently show something meaningless.
+ */
+export const blindfoldEngineGameMode: ModeDefinition = {
+  id: 'blindfold-engine-game',
+  title: 'Blindfold vs Computer',
+  summary: 'Play a whole game from memory.',
+  description:
+    'A full game against Stockfish running on this device. You see the moves, not the board. Choose your side, how strong the computer plays, and how much of the board you keep.',
+  category: 'blindfold',
+  variants: [
+    {
+      id: 'game',
+      label: 'Game',
+      description: 'A complete game against the offline engine.',
+      answerKind: 'move',
+      semantics: 'legal',
+    },
+  ],
+  rendersBoard: true,
+  supportedLayouts: ['starting'],
+  isEngineGame: true,
+  generate: () => {
+    throw new Error(
+      'blindfold-engine-game is played on its own screen and has no generated questions.',
+    );
+  },
+};

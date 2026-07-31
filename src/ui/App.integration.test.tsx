@@ -13,7 +13,7 @@ import userEvent from '@testing-library/user-event';
 import { App } from './App';
 import { AppProvider } from './state/AppContext';
 import { SessionScreen } from './screens/SessionScreen';
-import { allModeVariants } from '../core/training/registry';
+import { questionModeVariants } from '../core/training/registry';
 import { defaultSettings } from '../core/session/settings';
 import type { SessionSettings } from '../core/session/settings';
 
@@ -101,7 +101,7 @@ describe('every mode opens and asks a real question', () => {
    * every registered variant through the real session screen and assert it
    * renders a prompt and an answer surface.
    */
-  it.each(allModeVariants().map(({ mode, variant }) => [`${mode.id}/${variant.id}`, mode.id, variant.id]))(
+  it.each(questionModeVariants().map(({ mode, variant }) => [`${mode.id}/${variant.id}`, mode.id, variant.id]))(
     'opens %s',
     async (_label, modeId, variantId) => {
       renderSession({
@@ -132,7 +132,7 @@ describe('no manual progression controls exist anywhere', () => {
    * Next, Continue or Submit control, and no blocking result panel may appear
    * between questions.
    */
-  it.each(allModeVariants().map(({ mode, variant }) => [`${mode.id}/${variant.id}`, mode.id, variant.id]))(
+  it.each(questionModeVariants().map(({ mode, variant }) => [`${mode.id}/${variant.id}`, mode.id, variant.id]))(
     'has no Next/Submit/feedback in %s',
     async (_label, modeId, variantId) => {
       renderSession({

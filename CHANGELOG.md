@@ -2,6 +2,49 @@
 
 All notable changes to Bight. Dates are the day the work landed.
 
+## Unreleased — 2026-07-31 (offline engine, on this branch only)
+
+**This section describes work on `feature/blindfold-stockfish-handoff`, not on
+`main`.** It bundles Stockfish, which changes the licence of the distributed
+application. `main` remains MIT and ships no engine.
+
+### Added
+
+- **Blindfold vs Computer** (`blindfold-engine-game`): a whole game against
+  Stockfish 18 running on the device. Choose a side, one of four strengths, how
+  much of the board you keep, and whether moves are read aloud. Moves are made
+  by tapping origin then destination on a board you may not be able to see.
+- **An isolated engine boundary** in `src/services/engine/`: a Worker client
+  that permits exactly one outstanding UCI request and drops replies belonging
+  to abandoned searches, a pure UCI parser, and a service that serialises every
+  exchange. The engine never runs on the main thread and is disposed the moment
+  a game ends.
+- `scripts/prepare-engine.mjs` copies the engine out of the pinned npm package
+  with checksum verification; `scripts/engine-smoke.mjs` proves the real engine
+  boots and plays in real Chromium, against both the dev server and the
+  production build; `scripts/inspect-apk.mjs` now asserts the engine assets are
+  actually inside the APK.
+
+### Changed
+
+- **Licensing.** Stockfish is GPLv3, so the application distributed from this
+  branch is offered as a whole under GPLv3. `LICENSE` is now the GPLv3 text and
+  the previous MIT licence is preserved verbatim as `LICENSE-MIT` — Bight's own
+  code, written by a single copyright holder, remains available under MIT. No
+  permissive dependency has been relicensed. See `GPL_COMPLIANCE.md`,
+  `ENGINE_SOURCE.md` and `ENGINE_LICENSES.md`.
+- The APK grew from 54.31 MB to 59.76 MB.
+
+### Notes
+
+- **chess.js remains the only authority on legality.** The engine proposes four
+  characters of text; `applyEngineMove` asks chess.js whether that is a legal
+  move in this position, and stops the game with a stated reason if it is not.
+- No analysis, no evaluation display, no engine hints in the ordinary drills.
+  The engine exists to play one game.
+- **Not run on Android hardware or an emulator.** Whether 7 MB of WebAssembly
+  loads acceptably in a real Android WebView is unmeasured.
+
 ## 1.4.0 — 2026-07-31 (blindfold training)
 
 A new top-level category that teaches holding a position in your head. No

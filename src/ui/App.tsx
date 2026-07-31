@@ -15,6 +15,8 @@ import { ProgressScreen } from './screens/ProgressScreen';
 import { HistoryScreen } from './screens/HistoryScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { SessionScreen } from './screens/SessionScreen';
+import { EngineGameScreen } from './screens/EngineGameScreen';
+import { findMode } from '../core/training/registry';
 import type { SessionSettings } from '../core/session/settings';
 import { useApp } from './state/AppContext';
 
@@ -131,7 +133,14 @@ export function App() {
               </div>
             )}
           >
-            <SessionScreen settings={session} onExit={endSession} />
+            {/* The engine game is not a stream of questions, so it runs on its
+                own screen. It shares this error boundary, which is what keeps
+                an engine failure from touching any other mode. */}
+            {findMode(session.modeId)?.isEngineGame === true ? (
+              <EngineGameScreen onExit={endSession} />
+            ) : (
+              <SessionScreen settings={session} onExit={endSession} />
+            )}
           </ErrorBoundary>
         </main>
       </div>
