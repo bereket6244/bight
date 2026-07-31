@@ -190,6 +190,110 @@ try {
       setupLayout?.horizontalOverflow === false,
       `${viewport.name}: no horizontal overflow on setup with More settings open`,
     );
+
+    // ---- Blindfold ------------------------------------------------------
+    // The blindfold setup page carries seven extra segmented controls, and the
+    // reconstruction palette is twelve buttons across on a 360px screen, so
+    // both are checked in a real layout engine rather than assumed to fit.
+    await page.goto(BASE, { waitUntil: 'networkidle0' });
+    await page.waitForSelector('[data-testid="home-screen"]', { timeout: 15000 });
+    await page.evaluate(() => {
+      document
+        .querySelector('[data-testid="tab-modes"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await page.waitForSelector('[data-testid="mode-blindfold-reconstruction"]', { timeout: 10000 });
+    await page.evaluate(() => {
+      document
+        .querySelector('[data-testid="mode-blindfold-reconstruction"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await page.waitForSelector('[data-testid="setup-board-visibility"]', { timeout: 10000 });
+
+    const blindfoldSetup = await page.evaluate(() => {
+      const main = document.querySelector('.app__main');
+      const start = document.querySelector('[data-testid="start-session"]');
+      if (!main || !start) return null;
+
+      // Every segment must stay tappable rather than collapsing to a sliver.
+      const narrow = [];
+      for (const el of document.querySelectorAll('.segmented__item')) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.width < 32) narrow.push([el.textContent, Math.round(r.width)]);
+      }
+
+      main.scrollTop = main.scrollHeight;
+      return {
+        narrow,
+        horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
+        startVisible: start.getBoundingClientRect().top >= 0,
+      };
+    });
+
+    assert(
+      blindfoldSetup?.horizontalOverflow === false,
+      `${viewport.name}: no horizontal overflow on the blindfold setup page`,
+    );
+    assert(
+      blindfoldSetup !== null && blindfoldSetup.narrow.length === 0,
+      `${viewport.name}: no blindfold segment is squeezed below a tappable width`,
+      JSON.stringify(blindfoldSetup?.narrow.slice(0, 4)),
+    );
+    assert(
+      blindfoldSetup?.startVisible === true,
+      `${viewport.name}: Start is reachable on the blindfold setup page`,
+    );
+
+    // Play a whole sequence out and inspect the reconstruction palette.
+    await page.evaluate(() => {
+      document
+        .querySelector('[data-testid="setup-variant-partial"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      document
+        .querySelector('[data-testid="start-session"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await page.waitForSelector('[data-testid="blindfold-advance"]', { timeout: 15000 });
+
+    for (let step = 0; step < 40; step += 1) {
+      const more = await page.evaluate(() => {
+        const button = document.querySelector('[data-testid="blindfold-advance"]');
+        if (button === null) return false;
+        button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        return true;
+      });
+      if (!more) break;
+    }
+
+    await page.waitForSelector('[data-testid="piece-palette"]', { timeout: 15000 });
+
+    const palette = await page.evaluate(() => {
+      const buttons = [...document.querySelectorAll('.palette__piece')];
+      const rects = buttons.map((b) => b.getBoundingClientRect());
+      const rows = [...document.querySelectorAll('.palette__row')].map((row) => {
+        const r = row.getBoundingClientRect();
+        return { left: r.left, right: r.right };
+      });
+      return {
+        count: buttons.length,
+        minWidth: Math.min(...rects.map((r) => r.width)),
+        minHeight: Math.min(...rects.map((r) => r.height)),
+        rowsInside: rows.every((r) => r.left >= -1 && r.right <= window.innerWidth + 1),
+        horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
+      };
+    });
+
+    assert(palette.count === 12, `${viewport.name}: the palette offers all twelve pieces`);
+    assert(
+      palette.minHeight >= 44,
+      `${viewport.name}: every palette button meets the 44px touch target`,
+      `${Math.round(palette.minHeight)}px`,
+    );
+    assert(
+      palette.rowsInside === true && palette.horizontalOverflow === false,
+      `${viewport.name}: the palette fits the screen without horizontal scrolling`,
+      `narrowest button ${Math.round(palette.minWidth)}px`,
+    );
   }
 } catch (error) {
   failures.push(`harness error: ${error.message}`);

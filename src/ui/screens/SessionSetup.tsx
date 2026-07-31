@@ -15,6 +15,7 @@ import { FILE_LETTERS } from '../../core/chess/types';
 import { QUADRANT_LABELS, QUADRANTS } from '../../core/chess/square';
 import { validateSettings, type SessionSettings } from '../../core/session/settings';
 import type { ModeDefinition } from '../../core/training/types';
+import { DIFFICULTY_PLIES } from '../../core/training/generators/blindfold';
 import { useVoiceCapability } from '../../services/voice/useVoice';
 import { isVoiceUsable, voiceBadgeText } from '../../services/voice/state';
 
@@ -145,6 +146,104 @@ export function SessionSetup({ mode, initial, onStart, onBack }: SessionSetupPro
             ]}
             onChange={(labels) => patch({ labels })}
             testId="setup-labels"
+          />
+        </>
+      ) : null}
+
+      {/* Blindfold settings. These are the variants the information
+          architecture keeps out of the mode browser: difficulty, how much of
+          the board you get, and how the moves arrive. */}
+      {mode.supportsBlindfold === true ? (
+        <>
+          <Segmented
+            label="Sequence length"
+            value={settings.blindfoldDifficulty}
+            options={[
+              { value: 'beginner', label: '4 plies' },
+              { value: 'intermediate', label: '10' },
+              { value: 'advanced', label: '18' },
+              { value: 'expert', label: '24' },
+            ]}
+            onChange={(blindfoldDifficulty) =>
+              patch({
+                blindfoldDifficulty,
+                blindfoldPlies: DIFFICULTY_PLIES[blindfoldDifficulty],
+              })
+            }
+            testId="setup-blindfold-difficulty"
+          />
+
+          <Segmented
+            label="Board"
+            value={settings.boardVisibility}
+            options={[
+              { value: 'each-ply', label: 'Every move' },
+              { value: 'every-four', label: 'Every 4' },
+              { value: 'checkpoint-flash', label: 'Flash' },
+              { value: 'start-only', label: 'Start only' },
+              { value: 'never', label: 'None' },
+            ]}
+            onChange={(boardVisibility) => patch({ boardVisibility })}
+            testId="setup-board-visibility"
+          />
+
+          <Segmented
+            label="Move list"
+            value={settings.moveHistory}
+            options={[
+              { value: 'visible', label: 'Stays up' },
+              { value: 'latest-only', label: 'Last move' },
+              { value: 'hidden', label: 'Hidden' },
+            ]}
+            onChange={(moveHistory) => patch({ moveHistory })}
+            testId="setup-move-history"
+          />
+
+          <Segmented
+            label="Pace"
+            value={settings.pacing}
+            options={[
+              { value: 'manual', label: 'Tap' },
+              { value: 'slow', label: 'Slow' },
+              { value: 'medium', label: 'Medium' },
+              { value: 'fast', label: 'Fast' },
+            ]}
+            onChange={(pacing) => patch({ pacing })}
+            testId="setup-pacing"
+          />
+
+          <Segmented
+            label="Captures"
+            value={settings.captureBias}
+            options={[
+              { value: 'ordinary', label: 'Ordinary' },
+              { value: 'capture-focused', label: 'More' },
+              { value: 'heavy-exchanges', label: 'Heavy' },
+            ]}
+            onChange={(captureBias) => patch({ captureBias })}
+            testId="setup-capture-bias"
+          />
+
+          <Segmented
+            label="Hints"
+            value={settings.allowHints ? 'on' : 'off'}
+            options={[
+              { value: 'on', label: 'Allowed' },
+              { value: 'off', label: 'Off' },
+            ]}
+            onChange={(choice) => patch({ allowHints: choice === 'on' })}
+            testId="setup-allow-hints"
+          />
+
+          <Segmented
+            label="Read moves aloud"
+            value={settings.speakMoves ? 'on' : 'off'}
+            options={[
+              { value: 'off', label: 'Off' },
+              { value: 'on', label: 'On' },
+            ]}
+            onChange={(choice) => patch({ speakMoves: choice === 'on' })}
+            testId="setup-speak-moves"
           />
         </>
       ) : null}

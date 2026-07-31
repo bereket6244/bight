@@ -114,6 +114,31 @@ export function gradeAnswer(expected: ExpectedAnswer, submitted: SubmittedAnswer
       };
     }
 
+    case 'placement': {
+      const placed = (submitted as Extract<SubmittedAnswer, { kind: 'placement' }>).placed;
+
+      const key = (p: { square: SquareName; type: string; color: string }): string =>
+        `${p.square}:${p.color}:${p.type}`;
+      const requiredKeys = new Set(expected.required.map(key));
+      const placedKeys = new Set(placed.map(key));
+
+      const missing = expected.required.filter((p) => !placedKeys.has(key(p)));
+      // With `exact`, anything not required is an error. Partial
+      // reconstruction asks for a subset and ignores everything else.
+      const surplus = expected.exact ? placed.filter((p) => !requiredKeys.has(key(p))) : [];
+
+      const correct = missing.length === 0 && surplus.length === 0;
+
+      return {
+        correct,
+        missed: missing.map((p) => p.square),
+        extra: surplus.map((p) => p.square),
+        explanation: correct
+          ? `${expected.required.length} piece${expected.required.length === 1 ? '' : 's'} placed correctly.`
+          : `${missing.length} still to place${surplus.length > 0 ? `, ${surplus.length} that should not be there` : ''}.`,
+      };
+    }
+
     case 'piece-journey': {
       const path = (submitted as Extract<SubmittedAnswer, { kind: 'piece-journey' }>).path;
       if (path.length === 0) {
@@ -229,6 +254,8 @@ export function emptyAnswerFor(expected: ExpectedAnswer): SubmittedAnswer {
       return { kind: 'square-path', squares: [] };
     case 'piece-journey':
       return { kind: 'piece-journey', path: [] };
+    case 'placement':
+      return { kind: 'placement', placed: [] };
   }
 }
 
@@ -253,6 +280,8 @@ export function describeExpected(expected: ExpectedAnswer): string {
       return expected.exampleRoute.join(' - ');
     case 'piece-journey':
       return `${expected.exampleRoute.join(' - ')} (${expected.minMoves} moves)`;
+    case 'placement':
+      return expected.required.map((p) => `${p.color[0]}${p.type[0]}${p.square}`).join(' ');
   }
 }
 
@@ -276,6 +305,10 @@ export function describeSubmitted(submitted: SubmittedAnswer): string {
       return submitted.squares.length === 0 ? '(no answer)' : submitted.squares.join(' - ');
     case 'piece-journey':
       return submitted.path.length === 0 ? '(no answer)' : submitted.path.join(' - ');
+    case 'placement':
+      return submitted.placed.length === 0
+        ? '(no answer)'
+        : submitted.placed.map((p) => `${p.color[0]}${p.type[0]}${p.square}`).join(' ');
   }
 }
 

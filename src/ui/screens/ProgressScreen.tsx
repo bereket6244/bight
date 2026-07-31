@@ -30,6 +30,7 @@ import {
   computeStreak,
   evaluateAchievements,
 } from '../../core/progress/streak';
+import { blindfoldProgress } from '../../core/progress/blindfold';
 import { squaresInDisplayOrder } from '../../core/chess/square';
 import { getMode } from '../../core/training/registry';
 import { MODES } from '../../core/training/registry';
@@ -100,6 +101,7 @@ export function ProgressScreen() {
   const weak = weakestSquares(attempts, 8).filter((entry) => entry.attempts > 0);
   const missed = mostMissedTargets(attempts, 6);
   const wrong = mostWronglySelected(attempts, 6);
+  const blindfold = blindfoldProgress(attempts);
   const trend = accuracyTrend(attempts, 14);
   const trendChange = improvement(attempts);
   const streak = computeStreak(buildDailyRecords(sessions));
@@ -175,6 +177,58 @@ export function ProgressScreen() {
           {MASTERY_EXPLANATION}
         </p>
       </div>
+
+      {blindfold.overall.attempts > 0 ? (
+        <div className="card" data-testid="blindfold-progress">
+          <h2 className="card__title">Blindfold</h2>
+          <p className="card__subtitle" style={{ marginBottom: 'var(--gap)' }}>
+            Kept separate from board mastery: losing track of a piece is not the
+            same as not knowing a square.
+          </p>
+
+          <div className="stat-grid">
+            <div className="stat">
+              <div className="stat__label">Accuracy</div>
+              <div className="stat__value">
+                {Math.round(blindfold.overall.accuracy * 100)}%
+              </div>
+            </div>
+            <div className="stat">
+              <div className="stat__label">Without hints</div>
+              <div className="stat__value">
+                {blindfold.overall.unaided === 0
+                  ? '—'
+                  : `${Math.round(blindfold.overall.unaidedAccuracy * 100)}%`}
+              </div>
+            </div>
+            <div className="stat">
+              <div className="stat__label">Sequence held</div>
+              <div className="stat__value">
+                {blindfold.provenPlies === null ? '—' : `${blindfold.provenPlies} plies`}
+              </div>
+            </div>
+          </div>
+
+          {[...blindfold.byLength.entries()]
+            .sort((a, b) => a[0] - b[0])
+            .map(([plies, tally]) => (
+              <BarRow
+                key={plies}
+                label={`${plies} plies`}
+                value={tally.accuracy}
+                detail={`${Math.round(tally.accuracy * 100)}% of ${tally.attempts}`}
+              />
+            ))}
+
+          {blindfold.overall.hintsTaken > 0 ? (
+            <p className="card__subtitle" style={{ marginTop: 'var(--gap)' }}>
+              {blindfold.overall.hintsTaken} hint
+              {blindfold.overall.hintsTaken === 1 ? '' : 's'} taken. Hints are recorded,
+              never counted as mistakes.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {weak.length > 0 ? (
         <div className="card">

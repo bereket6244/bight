@@ -5,7 +5,7 @@
  * whole board, white orientation, labels on, no timer, twenty questions.
  */
 
-import type { ModeId } from '../training/types';
+import type { BoardVisibility, ModeId, MoveHistoryVisibility, MovePacing } from '../training/types';
 import { emptyFilters, type LabelMode, type OrientationPolicy, type PieceLayout, type SquareFilters } from '../training/types';
 
 /** How a session ends. */
@@ -66,6 +66,20 @@ export interface SessionSettings {
    * Defaults to `standard`: minimal boards made fork exercises too easy.
    */
   density: 'minimal' | 'standard' | 'crowded';
+
+  /* Blindfold. Ignored by every non-blindfold mode. */
+  /** Named preset; `plies` overrides it when set. */
+  blindfoldDifficulty: 'beginner' | 'intermediate' | 'advanced' | 'expert';
+  /** Sequence length in **plies** (half-moves). The wording is deliberate. */
+  blindfoldPlies: number;
+  captureBias: 'ordinary' | 'capture-focused' | 'heavy-exchanges';
+  boardVisibility: BoardVisibility;
+  moveHistory: MoveHistoryVisibility;
+  pacing: MovePacing;
+  /** Read each move aloud through the system voice, where one exists. */
+  speakMoves: boolean;
+  /** Offer hints (replay, reveal). Their use is recorded and scored. */
+  allowHints: boolean;
   /** Show legal/geometric destination markers. */
   showHints: boolean;
   /**
@@ -113,6 +127,14 @@ export function defaultSettings(modeId: ModeId, variantId: string): SessionSetti
     revealMs: 1200,
     hideBoard: false,
     density: 'standard',
+    blindfoldDifficulty: 'beginner',
+    blindfoldPlies: 4,
+    captureBias: 'ordinary',
+    boardVisibility: 'start-only',
+    moveHistory: 'visible',
+    pacing: 'manual',
+    speakMoves: false,
+    allowHints: true,
     showHints: false,
     accuracyFirst: true,
     sound: true,
@@ -163,6 +185,40 @@ export function validateSettings(settings: SessionSettings): SessionSettings {
     density: (['minimal', 'standard', 'crowded'] as const).includes(settings.density)
       ? settings.density
       : 'standard',
+    blindfoldDifficulty: (['beginner', 'intermediate', 'advanced', 'expert'] as const).includes(
+      settings.blindfoldDifficulty,
+    )
+      ? settings.blindfoldDifficulty
+      : 'beginner',
+    // 2 to 40 half-moves. Below 2 there is nothing to track; above 40 the
+    // sequence takes longer to present than anyone will sit through.
+    blindfoldPlies: clamp(settings.blindfoldPlies ?? 4, 2, 40),
+    captureBias: (['ordinary', 'capture-focused', 'heavy-exchanges'] as const).includes(
+      settings.captureBias,
+    )
+      ? settings.captureBias
+      : 'ordinary',
+    boardVisibility: (
+      [
+        'always',
+        'start-only',
+        'each-ply',
+        'each-move',
+        'every-four',
+        'checkpoint-flash',
+        'never',
+      ] as BoardVisibility[]
+    ).includes(settings.boardVisibility)
+      ? settings.boardVisibility
+      : 'start-only',
+    moveHistory: (['visible', 'latest-only', 'hidden'] as const).includes(settings.moveHistory)
+      ? settings.moveHistory
+      : 'visible',
+    pacing: (['manual', 'slow', 'medium', 'fast'] as const).includes(settings.pacing)
+      ? settings.pacing
+      : 'manual',
+    speakMoves: Boolean(settings.speakMoves),
+    allowHints: settings.allowHints !== false,
     feedback: settings.feedback === 'end-of-session' ? 'end-of-session' : 'immediate',
     retry: (['none', 'immediate', 'later', 'both'] as RetryPolicy[]).includes(settings.retry)
       ? settings.retry

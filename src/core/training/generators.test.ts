@@ -48,6 +48,8 @@ function perfectAnswer(question: Question): SubmittedAnswer {
       return { kind: 'square-path', squares: expected.exampleRoute.slice(1) };
     case 'piece-journey':
       return { kind: 'piece-journey', path: expected.exampleRoute.slice(1) };
+    case 'placement':
+      return { kind: 'placement', placed: [...expected.required] };
   }
 }
 

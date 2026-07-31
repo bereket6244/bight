@@ -24,6 +24,11 @@ import { knightRouteMode, knightVisionMode } from './generators/knight';
 import { knightForkMode, queenForkMode } from './generators/fork';
 import { notationMode } from './generators/notation';
 import { alignmentMode, blockerMode, pieceVisionMode } from './generators/pieces';
+import {
+  blindfoldProgressiveMode,
+  blindfoldReconstructionMode,
+  blindfoldTrackingMode,
+} from './generators/blindfold';
 import { legacyModeLabel, legacyVariantLabel } from './legacy';
 
 export const MODES: readonly ModeDefinition[] = Object.freeze([
@@ -38,6 +43,9 @@ export const MODES: readonly ModeDefinition[] = Object.freeze([
   notationMode,
   pieceVisionMode,
   blockerMode,
+  blindfoldTrackingMode,
+  blindfoldReconstructionMode,
+  blindfoldProgressiveMode,
 ]);
 
 const MODE_BY_ID = new Map<ModeId, ModeDefinition>(MODES.map((mode) => [mode.id, mode]));
@@ -78,6 +86,7 @@ export const CATEGORY_ORDER: readonly ModeCategory[] = Object.freeze([
   'forks',
   'notation',
   'position',
+  'blindfold',
 ]);
 
 export function modesByCategory(): Array<{ category: ModeCategory; label: string; modes: ModeDefinition[] }> {

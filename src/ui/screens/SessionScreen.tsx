@@ -14,13 +14,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Board, type SquareMark } from '../components/Board';
 import { ChoiceButtons, ColorChoice, CoordinateKeypad } from '../components/CoordinateKeypad';
 import {
+  BlindfoldSequenceView,
+  historyText,
+  PiecePalette,
+  useBlindfoldPlayback,
+} from '../components/Blindfold';
+import {
   clearRejection,
   exitSession,
   moveJourneyPiece,
   pause,
+  placePiece,
   questionSecondsLeft,
-  resume,
+  removePlacement,
   restartSession,
+  resume,
   selectSquare,
   sessionProgress,
   sessionSecondsLeft,
@@ -28,14 +36,20 @@ import {
   submitAnswer,
   summarise,
   tick,
+  recordHint,
   type SessionState,
 } from '../../core/session/engine';
 import type { SessionSettings } from '../../core/session/settings';
 import { describeLimit, describeTimer } from '../../core/session/settings';
-import type { AnswerSource, Question, SubmittedAnswer } from '../../core/training/types';
+import type {
+  AnswerSource,
+  BlindfoldPresentation,
+  Question,
+  SubmittedAnswer,
+} from '../../core/training/types';
 import { journeyMoves } from '../../core/chess/fork';
 import { fenPlacementFromOccupancy, occupancyFromFen } from '../../core/chess/position';
-import type { SquareName } from '../../core/chess/types';
+import type { PieceColor, PieceType, SquareName } from '../../core/chess/types';
 import { practiceWeights } from '../../core/progress/mastery';
 import { findMode } from '../../core/training/registry';
 import { APP_VERSION } from '../../core/version';
@@ -51,6 +65,9 @@ import { playTone } from '../../services/sound';
 /** How long a wrong input stays red. Long enough to notice, short enough to retry. */
 const FLASH_MS = 420;
 
+/** Placement field for a board with nothing on it. */
+const EMPTY_PLACEMENT = '8/8/8/8/8/8/8/8';
+
 export interface SessionScreenProps {
   settings: SessionSettings;
   onExit: () => void;
@@ -61,6 +78,9 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
   const [weights, setWeights] = useState<ReadonlyMap<SquareName, number> | undefined>(undefined);
   const [state, setState] = useState<SessionState | null>(null);
   const [flashToken, setFlashToken] = useState(0);
+  /** The piece armed in the reconstruction palette, if any. */
+  const [heldPiece, setHeldPiece] = useState<{ type: PieceType; color: PieceColor } | null>(null);
+  const [erasing, setErasing] = useState(false);
   const savedRef = useRef(false);
 
   // Adaptive weights load before the first question so the very first prompt
@@ -96,6 +116,25 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
 
   const question = state?.current ?? null;
   const rejected = state?.rejected ?? null;
+
+  /*
+   * Blindfold playback. The hook is called unconditionally, with a null
+   * presentation on every ordinary question, because hooks cannot be
+   * conditional and a mode switch must not change the hook order.
+   */
+  const playback = useBlindfoldPlayback(
+    question?.blindfold ?? null,
+    question?.id ?? 'none',
+    settings.speakMoves,
+  );
+  const sequenceLive = question?.blindfold !== undefined && !playback.finished;
+
+  // A fresh question starts with an empty hand, so a piece armed for the last
+  // reconstruction cannot be dropped onto the next one by accident.
+  useEffect(() => {
+    setHeldPiece(null);
+    setErasing(false);
+  }, [question?.id]);
 
   // Speak the prompt when the user has asked for it.
   useEffect(() => {
@@ -149,11 +188,25 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
         if (current.current?.expected.kind === 'piece-journey') {
           return moveJourneyPiece(current, square, 'touch', deps);
         }
+        if (current.current?.expected.kind === 'placement') {
+          if (erasing) return removePlacement(current, square, 'touch', deps);
+          if (heldPiece === null) return current;
+          return placePiece(
+            current,
+            { square, type: heldPiece.type, color: heldPiece.color },
+            'touch',
+            deps,
+          );
+        }
         return selectSquare(current, square, 'touch', deps);
       });
     },
-    [deps],
+    [deps, erasing, heldPiece],
   );
+
+  const takeHint = useCallback(() => {
+    setState((current) => (current === null ? current : recordHint(current)));
+  }, []);
 
   /*
    * Voice input. The microphone opens only while a question is actually on
@@ -294,6 +347,62 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
       ? question.expected.squares.length - state.selected.length
       : null;
 
+  /*
+   * Reconstruction draws the pieces the user has put down rather than the
+   * question's own FEN, which is the *starting* board and never changes. On
+   * the correction variant those two are the same until the first repair.
+   */
+  const placementFen =
+    question?.expected.kind === 'placement'
+      ? fenPlacementFromOccupancy(
+          new Map(
+            state.placed.map(
+              (placement) =>
+                [placement.square, { type: placement.type, color: placement.color }] as const,
+            ),
+          ),
+        )
+      : null;
+
+  if (placementFen !== null) {
+    for (const placement of state.placed) {
+      if (!marks.has(placement.square)) marks.set(placement.square, 'correct');
+    }
+    for (const square of flashSquares) marks.set(square, 'wrong');
+  }
+
+  /*
+   * While a sequence is still being played out the board belongs to the reveal
+   * schedule, not to the answer. Blindfold questions therefore draw whatever
+   * the schedule says — often nothing at all — and only hand the board back
+   * once the last move has been shown.
+   */
+  const blindfold = question?.blindfold;
+  const answeringPlacement = question?.expected.kind === 'placement';
+  const fallbackFen = question?.board.fen ?? EMPTY_PLACEMENT;
+
+  const boardFen =
+    blindfold === undefined
+      ? (journeyPosition?.fen ?? fallbackFen)
+      : answeringPlacement && playback.finished
+        ? (placementFen ?? EMPTY_PLACEMENT)
+        : (playback.boardFen ?? fallbackFen);
+
+  // Outside the schedule's reveal windows there is simply nothing to look at.
+  const boardHidden =
+    blindfold === undefined
+      ? (question?.board.hidden ?? false)
+      : answeringPlacement && playback.finished
+        ? false
+        : playback.boardFen === null;
+
+  const hintsOffered =
+    settings.allowHints &&
+    blindfold !== undefined &&
+    !paused &&
+    playback.finished &&
+    blindfold.history !== 'visible';
+
   return (
     <div data-testid="session-screen">
       <div className="session-bar">
@@ -358,7 +467,12 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
       ) : (
         <>
           <div className="prompt">
-            <p className="prompt__text">{question?.prompt.text}</p>
+            {/* While the sequence is still playing, the question itself is not
+                yet asked: showing it early would let the user watch for one
+                fact and ignore the rest of the position. */}
+            <p className="prompt__text">
+              {sequenceLive ? 'Follow the moves' : question?.prompt.text}
+            </p>
             {question?.prompt.coordinate !== undefined ? (
               <PromptCoordinate
                 coordinate={question.prompt.coordinate}
@@ -366,7 +480,7 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
                 questionId={question.id}
               />
             ) : null}
-            {question?.prompt.detail !== undefined ? (
+            {question?.prompt.detail !== undefined && !sequenceLive ? (
               <p className="prompt__detail">{question.prompt.detail}</p>
             ) : null}
             {remaining !== null ? (
@@ -392,15 +506,23 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
             ) : null}
           </div>
 
+          {blindfold !== undefined ? (
+            <BlindfoldSequenceView
+              playback={playback}
+              total={blindfold.san.length}
+              hideBoardEntirely={blindfold.visibility === 'never'}
+            />
+          ) : null}
+
           {question !== null ? (
             <Board
               key={question.id}
-              fen={journeyPosition?.fen ?? question.board.fen}
+              fen={boardFen}
               orientation={question.board.orientation}
               labels={question.board.labels}
               marks={marks}
               badges={badges}
-              hidden={question.board.hidden ?? false}
+              hidden={boardHidden}
               revealMs={question.board.revealMs}
               decorativePieces={question.board.decorativePieces ?? false}
               movableSquares={question.expected.kind === 'move' ? [question.expected.from] : []}
@@ -409,17 +531,43 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
                   ? (from, to) => answer({ kind: 'move', from, to }, 'drag')
                   : undefined
               }
-              onSquareTap={tapSquare}
+              onSquareTap={sequenceLive ? undefined : tapSquare}
             />
           ) : null}
 
-          <AnswerControls
-            question={question}
-            flashing={flashing}
-            onCoordinate={(square) => answer({ kind: 'coordinate', square }, 'keypad')}
-            onColor={(color) => answer({ kind: 'square-color', color }, 'touch')}
-            onChoice={(choice) => answer({ kind: 'choice', choice }, 'touch')}
-          />
+          {/* Answering is impossible until the sequence has been played out:
+              the question is about the position it produces. */}
+          {sequenceLive ? null : (
+            <>
+              {answeringPlacement ? (
+                <PiecePalette
+                  selected={heldPiece}
+                  onSelect={setHeldPiece}
+                  erasing={erasing}
+                  onErase={setErasing}
+                  showEraser={question?.variantId === 'correction'}
+                  flashWrong={flashing}
+                />
+              ) : null}
+
+              <AnswerControls
+                question={question}
+                flashing={flashing}
+                onCoordinate={(square) => answer({ kind: 'coordinate', square }, 'keypad')}
+                onColor={(color) => answer({ kind: 'square-color', color }, 'touch')}
+                onChoice={(choice) => answer({ kind: 'choice', choice }, 'touch')}
+              />
+
+              {hintsOffered && blindfold !== undefined ? (
+                <BlindfoldHints
+                  presentation={blindfold}
+                  questionId={question?.id ?? ''}
+                  hintsUsed={state.hintsUsed}
+                  onHint={takeHint}
+                />
+              ) : null}
+            </>
+          )}
 
           {/* Development only: never present in the packaged APK, because it
               prints the expected answer. */}
@@ -453,6 +601,56 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * The one hint a blindfold question offers: the move list, on request.
+ *
+ * Deliberately narrow. It never reveals a piece, a square or the answer — it
+ * gives back the moves the user was shown and asked to remember, which is help
+ * with *recall* rather than with the chess. Taking it is recorded on the
+ * attempt so progress can separate assisted answers from unaided ones, and
+ * nothing about the wording scolds the user for using it.
+ */
+function BlindfoldHints({
+  presentation,
+  questionId,
+  hintsUsed,
+  onHint,
+}: {
+  presentation: BlindfoldPresentation;
+  questionId: string;
+  hintsUsed: number;
+  onHint: () => void;
+}) {
+  const [revealed, setRevealed] = useState(false);
+
+  useEffect(() => {
+    setRevealed(false);
+  }, [questionId]);
+
+  if (!revealed) {
+    return (
+      <button
+        type="button"
+        className="button hint-button"
+        data-testid="blindfold-hint"
+        onClick={() => {
+          setRevealed(true);
+          onHint();
+        }}
+      >
+        Show the moves again
+      </button>
+    );
+  }
+
+  return (
+    <p className="prompt__detail" data-testid="blindfold-hint-moves">
+      {historyText(presentation, presentation.san.length, 'visible')}
+      {hintsUsed > 0 ? ' · hint used' : ''}
+    </p>
   );
 }
 

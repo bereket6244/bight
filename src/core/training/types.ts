@@ -33,7 +33,10 @@ export type ModeId =
   | 'notation'
   | 'piece-vision'
   | 'blockers'
-  | 'alignment';
+  | 'alignment'
+  | 'blindfold-tracking'
+  | 'blindfold-reconstruction'
+  | 'blindfold-progressive';
 
 /** How the user supplies an answer, which decides the answer control shown. */
 export type AnswerKind =
@@ -52,7 +55,9 @@ export type AnswerKind =
   /** Tap squares in order to trace a route. */
   | 'square-path'
   /** Move one piece repeatedly until it reaches a goal square. */
-  | 'piece-journey';
+  | 'piece-journey'
+  /** Place pieces from a palette to rebuild a position. */
+  | 'placement';
 
 export interface SingleSquareAnswer {
   kind: 'single-square';
@@ -135,9 +140,37 @@ export interface PieceJourneyAnswer {
   fen: string;
 }
 
+/** One piece on one square, as required by a reconstruction. */
+export interface RequiredPlacement {
+  square: SquareName;
+  type: PieceType;
+  color: PieceColor;
+}
+
+/**
+ * Rebuild part or all of a position from memory.
+ *
+ * The answer is a *set* of placements. Each correct placement stays on the
+ * board; a wrong one is rejected. The question completes itself the moment
+ * every required placement is present, so there is no Submit step.
+ */
+export interface PlacementAnswer {
+  kind: 'placement';
+  /** Exactly what must end up on the board. */
+  required: RequiredPlacement[];
+  /**
+   * Whether pieces outside `required` are tolerated. Partial reconstruction
+   * asks only for a subset and ignores the rest; full reconstruction does not.
+   */
+  exact: boolean;
+  /** Short statement of the subset being asked for, shown in the prompt. */
+  subsetLabel: string;
+}
+
 export type ExpectedAnswer =
   | SingleSquareAnswer
   | PieceJourneyAnswer
+  | PlacementAnswer
   | SquareSetAnswer
   | CoordinateAnswer
   | SquareColorAnswer
@@ -155,7 +188,9 @@ export type SubmittedAnswer =
   | { kind: 'move'; from: SquareName | null; to: SquareName | null }
   | { kind: 'square-path'; squares: SquareName[] }
   /** The squares the piece was moved through, in order, excluding its origin. */
-  | { kind: 'piece-journey'; path: SquareName[] };
+  | { kind: 'piece-journey'; path: SquareName[] }
+  /** Pieces the user has placed so far. */
+  | { kind: 'placement'; placed: RequiredPlacement[] };
 
 /** Where the answer came from, so voice errors never count as chess errors. */
 export type AnswerSource = 'touch' | 'keypad' | 'voice' | 'drag' | 'timeout';
@@ -231,6 +266,58 @@ export interface Question {
    * to move and castling rights, which a placement string alone cannot carry.
    */
   positionFen?: string;
+  /**
+   * How a blindfold question presents its move sequence before asking.
+   * Absent for every non-blindfold mode.
+   */
+  blindfold?: BlindfoldPresentation;
+}
+
+/** How much of the board a blindfold question shows, and when. */
+export type BoardVisibility =
+  /** The board is drawn throughout. */
+  | 'always'
+  /** Shown at the start, hidden once the moves begin. */
+  | 'start-only'
+  /** Redrawn after every ply. */
+  | 'each-ply'
+  /** Redrawn after each full move (two plies). */
+  | 'each-move'
+  /** Redrawn every fourth ply. */
+  | 'every-four'
+  /** Flashed briefly at each checkpoint, then hidden again. */
+  | 'checkpoint-flash'
+  /** Never drawn. */
+  | 'never';
+
+/** Whether the move list stays on screen while the user answers. */
+export type MoveHistoryVisibility = 'visible' | 'latest-only' | 'hidden';
+
+/** How quickly moves are revealed. */
+export type MovePacing = 'manual' | 'slow' | 'medium' | 'fast';
+
+/**
+ * Everything the session screen needs to play a sequence out to the user.
+ *
+ * The answer truth lives in `expected`; this is purely presentation, which is
+ * why it can be stored alongside without risking the two disagreeing.
+ */
+export interface BlindfoldPresentation {
+  /** Placement string of the position the sequence starts from. */
+  startFen: string;
+  /** SAN of each ply, in order. */
+  san: string[];
+  /** UCI of each ply, for reproduction and diagnostics. */
+  uci: string[];
+  /** Placement string after each ply, for the reveal schedule. */
+  fenAfterPly: string[];
+  visibility: BoardVisibility;
+  history: MoveHistoryVisibility;
+  pacing: MovePacing;
+  /** True once the sequence has been shown and the question is live. */
+  speakMoves: boolean;
+  /** Which side moved first, so move numbering reads correctly. */
+  startTurn: PieceColor;
 }
 
 /** Result of grading one submitted answer. */
@@ -290,6 +377,27 @@ export interface GeneratorContext {
   density?: 'minimal' | 'standard' | 'crowded';
   /** Show destination hints. */
   showHints?: boolean;
+
+  /* Blindfold settings. Ignored by every other mode. */
+  /** Named difficulty preset, used when `plies` is not set explicitly. */
+  difficulty?: 'beginner' | 'intermediate' | 'advanced' | 'expert';
+  /** Sequence length in **plies** (half-moves), never full moves. */
+  plies?: number;
+  captureBias?: 'ordinary' | 'capture-focused' | 'heavy-exchanges';
+  boardVisibility?: BoardVisibility;
+  moveHistory?: MoveHistoryVisibility;
+  pacing?: MovePacing;
+  speakMoves?: boolean;
+  /**
+   * Consecutive correct answers so far this session, and accuracy over the
+   * recent attempts.
+   *
+   * Only the progressive blindfold ladder reads these, to decide whether the
+   * user has earned the next stage. They are deliberately coarse: the ladder
+   * must never climb on one lucky answer, so it needs a run, not a result.
+   */
+  streak?: number;
+  recentAccuracy?: number;
 }
 
 export interface ModeVariant {
@@ -314,7 +422,8 @@ export type ModeCategory =
   | 'knight'
   | 'forks'
   | 'notation'
-  | 'position';
+  | 'position'
+  | 'blindfold';
 
 export const MODE_CATEGORY_LABELS: Record<ModeCategory, string> = {
   coordinates: 'Coordinates',
@@ -323,6 +432,7 @@ export const MODE_CATEGORY_LABELS: Record<ModeCategory, string> = {
   forks: 'Forks',
   notation: 'Notation and piece selection',
   position: 'Position vision',
+  blindfold: 'Blindfold',
 };
 
 export interface ModeDefinition {
@@ -344,6 +454,8 @@ export interface ModeDefinition {
   supportsVoice?: boolean;
   /** Whether the board-density control applies to this mode. */
   supportsDensity?: boolean;
+  /** Whether the blindfold controls (plies, pacing, visibility) apply. */
+  supportsBlindfold?: boolean;
   /**
    * Whether this mode ever draws a board.
    *
