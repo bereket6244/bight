@@ -75,6 +75,17 @@ export interface SessionDiagnostics {
   journey: string[];
   questionsCompleted: number;
   reproUrl: string;
+  /** Present only on blindfold questions. */
+  blindfold?: {
+    kind: string;
+    plies: number;
+    visibility: string;
+    history: string;
+    san: string;
+    hintsUsed: number;
+    /** How many pieces are standing on a reconstruction board right now. */
+    placed: number;
+  };
 }
 
 /** Snapshot of everything needed to reproduce the current question. */
@@ -100,5 +111,17 @@ export function collectDiagnostics(
     journey: state.journey,
     questionsCompleted: state.questionsCompleted,
     reproUrl: `?mode=${question.modeId}&variant=${question.variantId}&seed=${question.seed}&debug=1`,
+    blindfold:
+      question.blindfold === undefined
+        ? undefined
+        : {
+            kind: question.blindfold.kind,
+            plies: question.blindfold.san.length,
+            visibility: question.blindfold.visibility,
+            history: question.blindfold.history,
+            san: question.blindfold.san.join(' '),
+            hintsUsed: state.hintsUsed,
+            placed: state.placed.length,
+          },
   };
 }

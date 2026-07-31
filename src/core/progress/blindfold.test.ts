@@ -232,3 +232,130 @@ describe('proven sequence length', () => {
     expect(progress.provenPlies).toBeNull();
   });
 });
+
+describe('recommendations', () => {
+  it('suggests starting when there is nothing to go on', () => {
+    const progress = blindfoldProgress([]);
+    expect(progress.recommendation.action).toBe('start');
+    expect(progress.recommendation.plies).toBe(4);
+    expect(progress.recommendation.because).toMatch(/no blindfold practice/i);
+  });
+
+  it('asks for more evidence before acting on a handful of attempts', () => {
+    const progress = blindfoldProgress(
+      Array.from({ length: 3 }, () => attempt({ plies: 10, correct: true })),
+    );
+    expect(progress.recommendation.action).toBe('more-evidence');
+  });
+
+  it('holds the current length when it is not being held', () => {
+    const progress = blindfoldProgress(
+      Array.from({ length: 12 }, (_, i) =>
+        attempt({ plies: 10, correct: i < 5, hintsUsed: 0 }),
+      ),
+    );
+    expect(progress.recommendation.action).toBe('hold');
+    expect(progress.recommendation.plies).toBe(10);
+    // The reason quotes the numbers it acted on, so the user can check it.
+    expect(progress.recommendation.because).toMatch(/\d+% correct without hints/);
+  });
+
+  it('names the weakest question type when one stands out', () => {
+    const progress = blindfoldProgress([
+      // Ten occupancy questions, mostly wrong.
+      ...Array.from({ length: 10 }, (_, i) =>
+        attempt({ plies: 10, blindfoldKind: 'occupancy', correct: i < 2 }),
+      ),
+      // Ten piece-location questions, all right.
+      ...Array.from({ length: 10 }, () =>
+        attempt({ plies: 10, blindfoldKind: 'piece-location', correct: true }),
+      ),
+    ]);
+    expect(progress.recommendation.action).toBe('weakest-kind');
+    expect(progress.recommendation.kind).toBe('occupancy');
+    expect(progress.recommendation.headline).toContain('Occupied or empty');
+  });
+
+  it('takes the board away before making the sequence longer', () => {
+    const progress = blindfoldProgress(
+      Array.from({ length: 12 }, () =>
+        attempt({ plies: 10, correct: true, hintsUsed: 0, boardVisibility: 'start-only' }),
+      ),
+    );
+    expect(progress.recommendation.action).toBe('less-board');
+    expect(progress.recommendation.visibility).toBe('never');
+  });
+
+  it('only suggests a longer sequence once the board is already gone', () => {
+    const progress = blindfoldProgress(
+      Array.from({ length: 12 }, () =>
+        attempt({ plies: 10, correct: true, hintsUsed: 0, boardVisibility: 'never' }),
+      ),
+    );
+    expect(progress.recommendation.action).toBe('longer');
+    expect(progress.recommendation.plies).toBe(14);
+  });
+
+  it('never recommends anything without naming the evidence', () => {
+    for (const attempts of [
+      [],
+      [attempt({ plies: 10 })],
+      Array.from({ length: 12 }, () => attempt({ plies: 10, correct: false })),
+      Array.from({ length: 12 }, () => attempt({ plies: 10, boardVisibility: 'never' })),
+    ]) {
+      const { recommendation } = blindfoldProgress(attempts);
+      expect(recommendation.because.length).toBeGreaterThan(10);
+      expect(recommendation.headline.length).toBeGreaterThan(5);
+    }
+  });
+});
+
+describe('spacing, retention and orientation', () => {
+  it('counts distinct sessions and distinct days', () => {
+    const progress = blindfoldProgress([
+      attempt({ sessionId: 'a', timestamp: T0 }),
+      attempt({ sessionId: 'a', timestamp: T0 + 1000 }),
+      attempt({ sessionId: 'b', timestamp: T0 + DAY }),
+    ]);
+    expect(progress.sessions).toBe(2);
+    expect(progress.days).toBe(2);
+  });
+
+  it('reports accuracy over the recent window only', () => {
+    const progress = blindfoldProgress([
+      // Older run of misses, then a clean recent run.
+      ...Array.from({ length: 30 }, (_, i) => attempt({ correct: false, timestamp: T0 + i })),
+      ...Array.from({ length: 20 }, (_, i) => attempt({ correct: true, timestamp: T0 + 100 + i })),
+    ]);
+    expect(progress.overall.accuracy).toBeCloseTo(0.4);
+    expect(progress.recentAccuracy).toBe(1);
+  });
+
+  it('reports how long it has been since the last blindfold attempt', () => {
+    const progress = blindfoldProgress([attempt({ timestamp: T0 })], T0 + DAY * 3);
+    expect(progress.sinceLastMs).toBe(DAY * 3);
+    expect(blindfoldProgress([], T0).sinceLastMs).toBeNull();
+  });
+
+  it('splits accuracy by orientation', () => {
+    const progress = blindfoldProgress([
+      attempt({ orientation: 'white', correct: true }),
+      attempt({ orientation: 'black', correct: false }),
+      attempt({ orientation: 'black', correct: false }),
+    ]);
+    expect(progress.byOrientation.get('white')?.accuracy).toBe(1);
+    expect(progress.byOrientation.get('black')?.accuracy).toBe(0);
+  });
+
+  it('groups by question kind, ignoring an unrecorded one', () => {
+    const progress = blindfoldProgress([
+      attempt({ blindfoldKind: 'occupancy', correct: true }),
+      attempt({ blindfoldKind: 'occupancy', correct: false }),
+      attempt({ blindfoldKind: 'unknown' }),
+      attempt({ blindfoldKind: undefined }),
+    ]);
+    expect(progress.byKind.get('occupancy')?.attempts).toBe(2);
+    expect(progress.byKind.has('unknown')).toBe(false);
+    expect(progress.overall.attempts).toBe(4);
+  });
+});

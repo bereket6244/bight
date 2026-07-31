@@ -10,7 +10,7 @@ import { forksFrom } from '../chess/fork';
 import { isValidKnightRoute } from '../chess/knightRoute';
 import { occupancyFromFen } from '../chess/position';
 import { squareColor } from '../chess/square';
-import type { SquareName } from '../chess/types';
+import type { PieceColor, PieceType, SquareName } from '../chess/types';
 import type { ExpectedAnswer, Grade, Question, SubmittedAnswer } from './types';
 
 function describeSquares(squares: readonly SquareName[]): string {
@@ -281,9 +281,33 @@ export function describeExpected(expected: ExpectedAnswer): string {
     case 'piece-journey':
       return `${expected.exampleRoute.join(' - ')} (${expected.minMoves} moves)`;
     case 'placement':
-      return expected.required.map((p) => `${p.color[0]}${p.type[0]}${p.square}`).join(' ');
+      return expected.required.map(describePlacement).join(' ');
   }
 }
+
+/**
+ * One placement as `wNg1`: colour, piece letter, square.
+ *
+ * The piece letter is the standard chess one, not the first letter of the
+ * word — knight and king both start with "k", and rendering both as `k` made
+ * a placement answer ambiguous everywhere it was shown or parsed.
+ */
+function describePlacement(placement: {
+  square: SquareName;
+  type: PieceType;
+  color: PieceColor;
+}): string {
+  return `${placement.color === 'white' ? 'w' : 'b'}${PIECE_LETTERS[placement.type]}${placement.square}`;
+}
+
+const PIECE_LETTERS: Record<PieceType, string> = {
+  pawn: 'P',
+  knight: 'N',
+  bishop: 'B',
+  rook: 'R',
+  queen: 'Q',
+  king: 'K',
+};
 
 /** Renders a submitted answer for the review screen and stored history. */
 export function describeSubmitted(submitted: SubmittedAnswer): string {
@@ -308,7 +332,7 @@ export function describeSubmitted(submitted: SubmittedAnswer): string {
     case 'placement':
       return submitted.placed.length === 0
         ? '(no answer)'
-        : submitted.placed.map((p) => `${p.color[0]}${p.type[0]}${p.square}`).join(' ');
+        : submitted.placed.map(describePlacement).join(' ');
   }
 }
 

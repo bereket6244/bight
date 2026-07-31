@@ -1176,3 +1176,11 @@ input.field__control {
     box-shadow: 0 0 0 3px var(--mark-wrong);
   }
 }
+
+.recommendation {
+  padding: var(--gap);
+  margin-bottom: var(--gap);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  border-left: 3px solid var(--accent);
+}

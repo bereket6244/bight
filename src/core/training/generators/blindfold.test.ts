@@ -10,6 +10,8 @@
 import { describe, expect, it } from 'vitest';
 import { Chess } from 'chess.js';
 import {
+  BLINDFOLD_PRESETS,
+  DIFFICULTY_ORDER,
   DIFFICULTY_PLIES,
   LADDER_PROMOTION_STREAK,
   PROGRESSIVE_STAGES,
@@ -425,6 +427,92 @@ describe('progressive blindfold', () => {
       expect(question.modeId).toBe('blindfold-progressive');
       expect(question.blindfold?.san.length).toBe(6);
       replay(question);
+    }
+  });
+});
+
+describe('difficulty presets', () => {
+  it('offers four levels in a real ladder', () => {
+    expect(DIFFICULTY_ORDER).toEqual(['beginner', 'intermediate', 'advanced', 'expert']);
+
+    let previousPlies = 0;
+    let previousStage = -1;
+    for (const level of DIFFICULTY_ORDER) {
+      const preset = BLINDFOLD_PRESETS[level];
+      // Each level is longer than the last and shows no more of the board.
+      expect(preset.plies, level).toBeGreaterThan(previousPlies);
+      expect(stageIndexFor(preset.boardVisibility), level).toBeGreaterThanOrEqual(previousStage);
+      previousPlies = preset.plies;
+      previousStage = stageIndexFor(preset.boardVisibility);
+    }
+  });
+
+  it('matches the ply table the generator reads', () => {
+    for (const level of DIFFICULTY_ORDER) {
+      expect(BLINDFOLD_PRESETS[level].plies).toBe(DIFFICULTY_PLIES[level]);
+    }
+  });
+
+  it('describes each level without claiming a chess rating', () => {
+    for (const level of DIFFICULTY_ORDER) {
+      const preset = BLINDFOLD_PRESETS[level];
+      expect(preset.detail.length).toBeGreaterThan(10);
+      expect(preset.detail).not.toMatch(/\b(elo|rating|\d{3,4})\b/i);
+    }
+  });
+
+  it('ends with no board and full reconstruction at expert', () => {
+    expect(BLINDFOLD_PRESETS.expert.boardVisibility).toBe('never');
+    expect(BLINDFOLD_PRESETS.expert.moveHistory).toBe('hidden');
+    expect(BLINDFOLD_PRESETS.expert.reconstruction).toBe('full');
+    expect(BLINDFOLD_PRESETS.beginner.moveHistory).toBe('visible');
+  });
+
+  it('generates a real question at every level', () => {
+    for (const level of DIFFICULTY_ORDER) {
+      const preset = BLINDFOLD_PRESETS[level];
+      const question = generateTrackingQuestion(
+        context({
+          plies: preset.plies,
+          boardVisibility: preset.boardVisibility,
+          moveHistory: preset.moveHistory,
+          captureBias: preset.captureBias,
+        }),
+        createRng(17),
+        'mixed',
+      );
+      expect(question.blindfold?.san.length, level).toBe(preset.plies);
+      expect(question.blindfold?.visibility, level).toBe(preset.boardVisibility);
+      replay(question);
+    }
+  });
+});
+
+describe('question kind is recorded', () => {
+  it('names the kind on every tracking question', () => {
+    for (const seed of SEEDS) {
+      const question = generateTrackingQuestion(context(), createRng(seed), 'mixed');
+      expect(question.blindfold?.kind).toBe(kindOf(question));
+    }
+  });
+
+  it('distinguishes the reconstruction variants from each other', () => {
+    for (const variant of RECONSTRUCTION_VARIANTS) {
+      const question = generateReconstructionQuestion(context(), createRng(5), variant.id);
+      expect(question.blindfold?.kind).toBe(`${variant.id}-reconstruction`);
+    }
+  });
+
+  it('never leaves the kind unset', () => {
+    for (const seed of SEEDS.slice(0, 6)) {
+      for (const question of [
+        generateTrackingQuestion(context(), createRng(seed), 'mixed'),
+        generateReconstructionQuestion(context(), createRng(seed), 'partial'),
+        generateProgressiveQuestion(context(), createRng(seed), 'ladder'),
+      ]) {
+        expect(question.blindfold?.kind).not.toBe('unknown');
+        expect(question.blindfold?.kind).toBeTruthy();
+      }
     }
   });
 });

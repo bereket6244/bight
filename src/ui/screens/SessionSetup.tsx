@@ -15,7 +15,10 @@ import { FILE_LETTERS } from '../../core/chess/types';
 import { QUADRANT_LABELS, QUADRANTS } from '../../core/chess/square';
 import { validateSettings, type SessionSettings } from '../../core/session/settings';
 import type { ModeDefinition } from '../../core/training/types';
-import { DIFFICULTY_PLIES } from '../../core/training/generators/blindfold';
+import {
+  BLINDFOLD_PRESETS,
+  DIFFICULTY_ORDER,
+} from '../../core/training/generators/blindfold';
 import { useVoiceCapability } from '../../services/voice/useVoice';
 import { isVoiceUsable, voiceBadgeText } from '../../services/voice/state';
 
@@ -155,22 +158,42 @@ export function SessionSetup({ mode, initial, onStart, onBack }: SessionSetupPro
           the board you get, and how the moves arrive. */}
       {mode.supportsBlindfold === true ? (
         <>
+          {/* The preset writes into the ordinary settings below, which stay
+              editable: it is a starting point, not a separate mode. */}
           <Segmented
-            label="Sequence length"
+            label="Difficulty"
             value={settings.blindfoldDifficulty}
-            options={[
-              { value: 'beginner', label: '4 plies' },
-              { value: 'intermediate', label: '10' },
-              { value: 'advanced', label: '18' },
-              { value: 'expert', label: '24' },
-            ]}
-            onChange={(blindfoldDifficulty) =>
+            options={DIFFICULTY_ORDER.map((id) => ({
+              value: id,
+              label: BLINDFOLD_PRESETS[id].label,
+            }))}
+            onChange={(blindfoldDifficulty) => {
+              const preset = BLINDFOLD_PRESETS[blindfoldDifficulty];
               patch({
                 blindfoldDifficulty,
-                blindfoldPlies: DIFFICULTY_PLIES[blindfoldDifficulty],
-              })
-            }
+                blindfoldPlies: preset.plies,
+                boardVisibility: preset.boardVisibility,
+                moveHistory: preset.moveHistory,
+                captureBias: preset.captureBias,
+                // Reconstruction depth is part of the level, but only for the
+                // mode it belongs to — a preset must not retarget the drill.
+                variantId:
+                  mode.id === 'blindfold-reconstruction' ? preset.reconstruction : settings.variantId,
+              });
+            }}
             testId="setup-blindfold-difficulty"
+          />
+
+          <p className="card__subtitle" data-testid="blindfold-preset-detail">
+            {BLINDFOLD_PRESETS[settings.blindfoldDifficulty].detail}
+          </p>
+
+          <Segmented
+            label="Sequence length"
+            value={settings.blindfoldPlies}
+            options={[4, 8, 12, 18, 24].map((plies) => ({ value: plies, label: `${plies}` }))}
+            onChange={(blindfoldPlies) => patch({ blindfoldPlies })}
+            testId="setup-blindfold-plies"
           />
 
           <Segmented

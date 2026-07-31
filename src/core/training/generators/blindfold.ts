@@ -38,6 +38,7 @@ import type {
   GeneratorContext,
   ModeDefinition,
   ModeVariant,
+  MoveHistoryVisibility,
   Question,
   RequiredPlacement,
 } from '../types';
@@ -50,6 +51,79 @@ export const DIFFICULTY_PLIES: Record<string, number> = {
   advanced: 18,
   expert: 24,
 };
+
+export type BlindfoldDifficulty = 'beginner' | 'intermediate' | 'advanced' | 'expert';
+
+export interface BlindfoldPreset {
+  label: string;
+  /** One line for the setup page. Describes the exercise, never a rating. */
+  detail: string;
+  plies: number;
+  boardVisibility: BoardVisibility;
+  moveHistory: MoveHistoryVisibility;
+  captureBias: CaptureBias;
+  /** Which reconstruction variant suits this level, when that mode is chosen. */
+  reconstruction: 'partial' | 'full' | 'correction';
+}
+
+/**
+ * The four presets, as settings rather than as a separate difficulty system.
+ *
+ * Choosing one writes these values into the ordinary settings, which the user
+ * is then free to change individually — the preset is a starting point, not a
+ * mode. Nothing here is claimed to correspond to a chess rating; they are
+ * simply four points on a ladder of how much help the exercise gives.
+ *
+ * Beginner keeps the board through the sequence rather than only at the start.
+ * The written ladder has it "visible initially", but that is the same as the
+ * intermediate stage, and it would make the first drill a user meets harder
+ * than the one that follows it.
+ */
+export const BLINDFOLD_PRESETS: Record<BlindfoldDifficulty, BlindfoldPreset> = {
+  beginner: {
+    label: 'Beginner',
+    detail: 'Four plies, board redrawn as you go, moves stay on screen.',
+    plies: DIFFICULTY_PLIES.beginner as number,
+    boardVisibility: 'each-move',
+    moveHistory: 'visible',
+    captureBias: 'ordinary',
+    reconstruction: 'partial',
+  },
+  intermediate: {
+    label: 'Intermediate',
+    detail: 'Ten plies, board only at the start, last move only.',
+    plies: DIFFICULTY_PLIES.intermediate as number,
+    boardVisibility: 'start-only',
+    moveHistory: 'latest-only',
+    captureBias: 'capture-focused',
+    reconstruction: 'partial',
+  },
+  advanced: {
+    label: 'Advanced',
+    detail: 'Eighteen plies, no board, no move list.',
+    plies: DIFFICULTY_PLIES.advanced as number,
+    boardVisibility: 'never',
+    moveHistory: 'hidden',
+    captureBias: 'capture-focused',
+    reconstruction: 'partial',
+  },
+  expert: {
+    label: 'Expert',
+    detail: 'Twenty-four plies with heavy exchanges, and rebuild the lot.',
+    plies: DIFFICULTY_PLIES.expert as number,
+    boardVisibility: 'never',
+    moveHistory: 'hidden',
+    captureBias: 'heavy-exchanges',
+    reconstruction: 'full',
+  },
+};
+
+export const DIFFICULTY_ORDER: readonly BlindfoldDifficulty[] = Object.freeze([
+  'beginner',
+  'intermediate',
+  'advanced',
+  'expert',
+]);
 
 function placementOf(fen: string): string {
   return fen.split(' ')[0] as string;
@@ -71,6 +145,8 @@ function presentationFor(
     pacing: context.pacing ?? 'manual',
     speakMoves: context.speakMoves ?? false,
     startTurn: sequence.startTurn,
+    // Filled in by the caller once it has decided what to ask.
+    kind: 'unknown',
   };
 }
 
@@ -223,7 +299,7 @@ export function generateTrackingQuestion(
     variantLabel: label,
     semantics: null,
     seed,
-    blindfold: presentation,
+    blindfold: { ...presentation, kind },
     positionFen: sequence.finalFen,
   };
 
@@ -507,7 +583,9 @@ export function generateReconstructionQuestion(
     variantLabel: label,
     semantics: null,
     seed,
-    blindfold: presentation,
+    // `full-reconstruction` and `partial-reconstruction` are separate skills
+    // in the progress model, so the kind is not simply the variant id.
+    blindfold: { ...presentation, kind: `${variantId}-reconstruction` },
     positionFen: sequence.finalFen,
   };
 

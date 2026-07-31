@@ -2,6 +2,64 @@
 
 All notable changes to Bight. Dates are the day the work landed.
 
+## 1.4.0 — 2026-07-31 (blindfold training)
+
+A new top-level category that teaches holding a position in your head. No
+engine is involved: every sequence is generated and validated through chess.js,
+and the app stays entirely offline.
+
+### Added
+
+- **Blindfold category, three modes.** *Track a Position* plays a legal move
+  sequence and asks one targeted question about the position it produced —
+  where a piece ended, what stands on a square, whether a square is occupied,
+  whose move it is, whether a named piece survived, what a capture took, or
+  what attacks what. *Reconstruct a Position* asks you to rebuild it, either a
+  named subset, the whole thing, or by repairing a position shown with a few
+  deliberate errors in it. *Progressive Blindfold* runs the same tracking
+  questions up a six-stage ladder that removes visual help a stage at a time,
+  either guided by your accuracy or held wherever you put it.
+- **A validated sequence core** (`core/chess/sequence.ts`). Sequences are
+  replayed through a fresh chess.js instance before they are used, so SAN, UCI,
+  the position after every ply, the final FEN, the side to move and every
+  capture are recorded facts rather than the generator's own bookkeeping.
+  Pieces are tracked by identity, so a promoted pawn and a castled rook are
+  each followed to where they actually end up.
+- **Reconstruction by tapping**: pick a piece, tap a square. Correct placements
+  stay, wrong ones flash and are discarded, and the question completes itself
+  the moment the position is right. No Submit button, in keeping with the rest
+  of the app. The palette always offers all twelve pieces and shows no counts,
+  because a palette listing only what you still need would hand over the whole
+  material balance.
+- **Four difficulty presets** that write into the ordinary settings rather than
+  forming a separate system, so any one of them can then be adjusted. No preset
+  claims to correspond to a chess rating.
+- **Restrained hints.** One control, which gives back the move list you were
+  shown. Its use is recorded and reported separately as hint-free accuracy; it
+  is never counted as a mistake.
+- **A separate blindfold progress model** (`core/progress/blindfold.ts`) with a
+  transparent "what to practice next" recommendation that always names the
+  numbers it acted on.
+
+### Changed
+
+- **Blindfold attempts are excluded from square mastery outright.** Getting
+  "where is the knight that started on g1" wrong means you lost track of a
+  piece, not that you do not know where e5 is. Crediting it to e5 would have
+  made squares the user knows perfectly well look weak, and adaptive practice
+  would then have drilled the wrong thing.
+- The mode-count guard rose from 12 to 15 to admit exactly one new category of
+  three cards. The per-category cap of four and the four-variants-per-mode cap
+  are unchanged, which is why the progressive ladder's six stages live in setup
+  rather than as six mode variants.
+
+### Notes
+
+- `Attempt` gained four optional fields (`hintsUsed`, `plies`,
+  `boardVisibility`, `blindfoldKind`). They are optional by design: the schema
+  version is unchanged, backups written by 1.3.0 import untouched, and absent
+  fields read as "not recorded" rather than as a default that would be a lie.
+
 ## 1.3.0 — 2026-07-31 (third pass)
 
 Fixes for problems reported from real Android use, plus handoff scaffolding.

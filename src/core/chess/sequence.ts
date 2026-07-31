@@ -330,13 +330,21 @@ export function generateSequence(rng: Rng, request: SequenceRequest): MoveSequen
   }
 }
 
-/** Minimum captures a bias should aim for, used to reject weak sequences. */
+/**
+ * Minimum captures a bias should aim for, used to reject weak sequences.
+ *
+ * Scaled to the length, because captures need moves to set up: nothing can be
+ * taken on ply one, and the first exchange from the opening is realistically
+ * ply three at the earliest. Asking a four-ply sequence for two captures made
+ * "Beginner + heavy exchanges" — a combination the setup page offers — fail to
+ * generate at all.
+ */
 export function minimumCaptures(bias: CaptureBias, plies: number): number {
   switch (bias) {
     case 'heavy-exchanges':
-      return Math.max(2, Math.floor(plies / 4));
+      return Math.max(1, Math.floor(plies / 3));
     case 'capture-focused':
-      return Math.max(1, Math.floor(plies / 8));
+      return Math.max(1, Math.floor(plies / 6));
     case 'ordinary':
       return 0;
   }
@@ -344,7 +352,13 @@ export function minimumCaptures(bias: CaptureBias, plies: number): number {
 
 /**
  * Generates a sequence meeting the request, retrying until it does.
- * Returns null after `attempts` rather than looping forever.
+ *
+ * The capture count is a *preference*, so a request that cannot be met after
+ * `attempts` tries returns the capture-heaviest legal sequence found rather
+ * than nothing. Only a complete inability to build a legal sequence of the
+ * requested length returns null — that is a real failure and the caller throws
+ * on it. The alternative, failing because a short sequence could not fit two
+ * captures in, meant a legitimate pair of settings crashed the session.
  */
 export function requireSequence(
   rng: Rng,
@@ -352,14 +366,15 @@ export function requireSequence(
   attempts = 40,
 ): MoveSequence | null {
   const wanted = minimumCaptures(request.captureBias ?? 'ordinary', request.plies);
+  let best: MoveSequence | null = null;
 
   for (let i = 0; i < attempts; i += 1) {
     const sequence = generateSequence(rng, request);
     if (sequence === null) continue;
-    if (sequence.captureCount < wanted) continue;
-    return sequence;
+    if (sequence.captureCount >= wanted) return sequence;
+    if (best === null || sequence.captureCount > best.captureCount) best = sequence;
   }
-  return null;
+  return best;
 }
 
 /**

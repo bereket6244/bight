@@ -300,3 +300,45 @@ describe('sequence quality', () => {
     expect(sawNull).toBe(true);
   });
 });
+
+describe('short sequences with a heavy capture bias', () => {
+  it('still produces something for every offered combination', () => {
+    // The setup page offers any difficulty against any capture bias, so every
+    // pairing must generate. A four-ply heavy-exchange request used to demand
+    // two captures, which four plies from the opening almost never allows, and
+    // the session crashed rather than starting.
+    for (const plies of [4, 8, 10, 12, 18, 24]) {
+      for (const bias of ['ordinary', 'capture-focused', 'heavy-exchanges'] as const) {
+        for (const seed of SEEDS.slice(0, 4)) {
+          const sequence = requireSequence(createRng(seed), { plies, captureBias: bias });
+          expect(sequence, `${plies} plies, ${bias}, seed ${seed}`).not.toBeNull();
+          expect(sequence?.plies).toHaveLength(plies);
+        }
+      }
+    }
+  });
+
+  it('never asks a sequence for more captures than its length allows', () => {
+    for (const plies of [2, 4, 6, 8, 20, 40]) {
+      for (const bias of ['ordinary', 'capture-focused', 'heavy-exchanges'] as const) {
+        // A capture needs a target to move into place first, so the honest
+        // ceiling is well under one per ply.
+        expect(minimumCaptures(bias, plies), `${plies} ${bias}`).toBeLessThanOrEqual(
+          Math.floor(plies / 2),
+        );
+      }
+    }
+  });
+
+  it('prefers captures without demanding them, when they cannot be had', () => {
+    // Averaged over many seeds, a heavier bias still yields more captures.
+    const average = (bias: 'ordinary' | 'heavy-exchanges'): number => {
+      let total = 0;
+      for (let seed = 1; seed <= 30; seed += 1) {
+        total += requireSequence(createRng(seed), { plies: 12, captureBias: bias })?.captureCount ?? 0;
+      }
+      return total / 30;
+    };
+    expect(average('heavy-exchanges')).toBeGreaterThan(average('ordinary'));
+  });
+});

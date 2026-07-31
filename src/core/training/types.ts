@@ -314,6 +314,15 @@ export interface BlindfoldPresentation {
   visibility: BoardVisibility;
   history: MoveHistoryVisibility;
   pacing: MovePacing;
+  /**
+   * Which kind of blindfold question this is — `piece-location`, `occupancy`,
+   * `full-reconstruction` and so on.
+   *
+   * The mixed variant asks seven different things, so the variant id alone
+   * cannot tell progress which skill an attempt exercised. Kept as a plain
+   * string because progress only ever groups by it.
+   */
+  kind: string;
   /** True once the sequence has been shown and the question is live. */
   speakMoves: boolean;
   /** Which side moved first, so move numbering reads correctly. */

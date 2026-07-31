@@ -114,6 +114,12 @@ export interface Attempt {
    */
   plies?: number;
   boardVisibility?: string;
+  /**
+   * Which blindfold question this was: `piece-location`, `occupancy`,
+   * `full-reconstruction` and so on. The mixed variant asks seven different
+   * things, so the variant id alone cannot say what skill was exercised.
+   */
+  blindfoldKind?: string;
 }
 
 /** A square the user got wrong, flashed briefly by the UI. */
@@ -404,6 +410,7 @@ function buildAttempt(
     hintsUsed: state.hintsUsed,
     plies: question.blindfold?.san.length,
     boardVisibility: question.blindfold?.visibility,
+    blindfoldKind: question.blindfold?.kind,
   };
 }
 
