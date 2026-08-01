@@ -2,6 +2,67 @@
 
 All notable changes to Bight. Dates are the day the work landed.
 
+## 2.2.0 — 2026-08-01 (look at the position)
+
+### Added
+
+- **Show pieces / Hide pieces in Blindfold vs Computer.** A player who has lost
+  the thread mid-game had two options: guess, or resign. Neither teaches
+  anything. While the pieces are hidden the board now carries a **Show pieces**
+  button that draws the current position in full, and a **Hide pieces** button
+  to go back to blindfold play.
+
+  It is a *reveal*, not a settings change. "Show the board" is left exactly as
+  chosen, nothing is written to the saved game, and a resumed game always comes
+  back blindfolded — so peeking once cannot quietly switch the blindfold off
+  for every game afterwards. The control is offered only while the settings are
+  hiding the pieces, so it never appears over a visible board or a finished
+  game.
+
+  Pressing it is safe at any moment: it is render state and touches no turn
+  token, timer or search, so it works during the computer's turn without
+  disturbing the reply. It works on both "Never" and "First 6 plies", appearing
+  by itself when the latter hides the board at ply six. Hiding again restores
+  the empty coordinate input grid rather than removing the board, so the
+  failure a real device reported cannot come back through this door.
+
+  While the pieces are revealed the position is fully drawn, legal-destination
+  hints included: there is nothing left to protect once the user has chosen to
+  look. The status tag says **Pieces shown** rather than "No board", because
+  the label should describe what is actually on screen.
+
+### Fixed
+
+- **`npm run test:layout` could pass against the previous build.** The layout
+  checks serve `dist/`, not the working tree, and nothing checked the two
+  agreed. A stale bundle does not fail loudly — it passes everything the last
+  build passed and fails only the checks covering work you just did, which
+  reads exactly like a broken feature. It cost a wrong diagnosis during this
+  change. `startServer` in preview mode now refuses to start when `dist/` is
+  older than `src/`, and says to run `npm run build`.
+
+- **Two square-colour integration tests were guessing.** One decided the
+  session had advanced by checking that the prompt coordinate changed; two
+  consecutive questions may name the same square, so about one run in
+  sixty-four it read a completed question as a stuck one, and it failed exactly
+  that way. The other clicked "light" and returned early when light happened to
+  be correct, so roughly half its runs asserted nothing at all. Both now
+  compute the answer from the square with `squareColor()` and assert on the
+  completed count.
+
+### Verification
+
+993 unit and integration tests, 64 real-Chromium blindfold layout checks across
+four viewports, 48 browser layout checks, 15 blindfold walkthrough flows, and
+the engine smoke, game and difficulty checks against real Stockfish. The reveal
+is covered by eleven new integration tests — reveal, hide, continued play,
+mid-search reveal, both visibility settings, resumed games, and the setting
+being left alone — and by real-browser checks that the control is a 48px touch
+target, on screen, and draws the position that was actually played.
+
+**Not run on Android hardware.** The device retest checklist is in
+`BUILD_STATUS.md`.
+
 ## 2.1.0 — 2026-08-01 (blindfold repairs)
 
 Repairs four failures reported from a real Android phone, plus six found while

@@ -21,11 +21,12 @@ project and none has been fabricated.
 
 | Version | Tag | File | Commit | Engine | Licence | Size | SHA-256 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| **2.1.0** | `v2.1.0-gpl-engine` | `Bight-v2.1.0-GPL-engine.apk` | `38395ce` | Stockfish 18 lite | GPL-3.0-or-later | 59.71 MB | `afe1681a2f21218c2a46efd7438550753b44e2e78fc8fee597f4d00f856708d6` |
+| **2.2.0** | `v2.2.0-gpl-engine` | `Bight-v2.2.0-GPL-engine.apk` | `25b1892` | Stockfish 18 lite | GPL-3.0-or-later | 59.71 MB | `8346b925cd507e5d72766d3b9e4c777841f8948ff4f3b5c794d8dea09e51f6c4` |
+| 2.1.0 | `v2.1.0-gpl-engine` | `Bight-v2.1.0-GPL-engine.apk` | `38395ce` | Stockfish 18 lite | GPL-3.0-or-later | 59.71 MB | `afe1681a2f21218c2a46efd7438550753b44e2e78fc8fee597f4d00f856708d6` |
 | 2.0.0 | `v2.0.0-gpl-engine` | not kept in the tree | `171ad51` | Stockfish 18 lite | GPL-3.0-or-later | 59.70 MB | `2f8d92e7358b487bad0f2a27e844358bf03691e14906d97879d9017b96eaa166` |
 | 1.4.0 | `v1.4.0-mit-blindfold` | `Bight-v1.4.0-MIT-blindfold.apk` | `67a442b` | none | MIT | 54.31 MB | `55a36c07eb5a53b47054cc5522b529a15c20fdad7bb9c6abd0a0d56fc32ad7d2` |
 
-The 2.1.0 row is completed by `npm run release:android`, which prints the
+The newest row is completed by `npm run release:android`, which prints the
 commit, size and checksum of the build it produces.
 
 ### Why 2.0.0 is not a file here
@@ -56,7 +57,18 @@ Recovering one of them means checking out that commit and reading
 
 ## What is in each release
 
-### 2.1.0 — blindfold repairs (this release)
+### 2.2.0 — looking at the position (this release)
+
+Adds **Show pieces** / **Hide pieces** to Blindfold vs Computer. A player who
+has lost the thread can see the position and then hide it again, without
+resigning and without editing their settings: the reveal is never written to
+the visibility setting or to the saved game, so a resumed game always comes
+back blindfolded.
+
+Also fixes a check that could pass against a stale build, and two integration
+tests that were inferring outcomes from the prompt coordinate.
+
+### 2.1.0 — blindfold repairs
 
 Fixes four failures reported from a real Android phone:
 
@@ -88,11 +100,12 @@ engine, under MIT. Still a good build if the GPL obligation is unwanted.
 ## Getting a build
 
 Preferred: the GitHub Release for the tag, which carries the APK and its
-`.sha256`. All four tags have one, on a private repository, so the links need
-an authenticated account:
+`.sha256`. Every tag has one, on a private repository, so the links need an
+authenticated account:
 
 | Tag | Release | APK attached |
 | --- | --- | --- |
+| [`v2.2.0-gpl-engine`](https://github.com/bereket6244/bight/releases/tag/v2.2.0-gpl-engine) | Bight 2.2.0 — looking at the position | yes, 59.71 MB + `.sha256` |
 | [`v2.1.0-gpl-engine`](https://github.com/bereket6244/bight/releases/tag/v2.1.0-gpl-engine) | Bight 2.1.0 — the repairs a real phone found | yes, 59.71 MB + `.sha256` |
 | [`v2.0.0-gpl-engine`](https://github.com/bereket6244/bight/releases/tag/v2.0.0-gpl-engine) | Bight 2.0.0 — offline Stockfish | no — binary not kept |
 | [`v1.4.0-mit-blindfold`](https://github.com/bereket6244/bight/releases/tag/v1.4.0-mit-blindfold) | Bight 1.4.0 — blindfold training, MIT | yes, 54.31 MB + `.sha256` |
@@ -105,11 +118,11 @@ If no GitHub Release exists for a tag, the versioned APK in `release/` at that
 tag is the artifact. Verify it before installing:
 
 ```bash
-sha256sum -c release/Bight-v2.1.0-GPL-engine.apk.sha256
+sha256sum -c release/Bight-v2.2.0-GPL-engine.apk.sha256
 ```
 
 ```bash
-adb install -r release/Bight-v2.1.0-GPL-engine.apk
+adb install -r release/Bight-v2.2.0-GPL-engine.apk
 ```
 
 ## Licensing
@@ -124,6 +137,7 @@ See `GPL_COMPLIANCE.md`, `ENGINE_SOURCE.md` and `ENGINE_LICENSES.md`.
 
 | Version | Ran on a real Android device? |
 | --- | --- |
-| 2.1.0 | **Not yet.** Built and verified in desktop Chromium and by APK inspection. The device retest checklist is in `BUILD_STATUS.md`. |
+| 2.2.0 | **Not yet.** Built and verified in desktop Chromium and by APK inspection. The device retest checklist is in `BUILD_STATUS.md`. |
+| 2.1.0 | **Not yet.** Superseded by 2.2.0 before any device run. |
 | 2.0.0 | Yes — by the repository owner, who found the four failures 2.1.0 repairs. |
 | 1.4.0 | No. |

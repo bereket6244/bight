@@ -1000,3 +1000,270 @@ describe('resuming an unfinished game', () => {
     expect(screen.queryByTestId('engine-resume')).not.toBeInTheDocument();
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * Looking at the position on purpose
+ *
+ * Blindfold play is the point, but being stuck is not: a player who has lost
+ * the thread needs a way to see where everything is and then carry on, without
+ * abandoning the game or editing their settings. This is a *temporary* reveal,
+ * so every test here also checks that the setting underneath is untouched.
+ * ------------------------------------------------------------------ */
+
+/** What the board says stands on a square, read the way a user would. */
+function pieceAt(square: string): string {
+  const label = screen.getByTestId(`square-${square}`).getAttribute('aria-label') ?? '';
+  // "e4, white pawn" -> "white pawn"; a bare "e4" means empty.
+  return label === square ? '' : label.slice(square.length + 2);
+}
+
+/** Starts a hidden game and plays 1. e4 e5, leaving it as the user's move. */
+async function hiddenGameAfterOneMove(
+  user: ReturnType<typeof userEvent.setup>,
+  engine: ReturnType<typeof fakeEngine>,
+): Promise<void> {
+  await user.click(screen.getByTestId('engine-visibility-never'));
+  await user.click(screen.getByTestId('engine-start'));
+  await screen.findByTestId('engine-game');
+  await tapMove(user, 'e2', 'e4');
+  await waitFor(
+    () => expect(screen.getByTestId('engine-last-move')).toHaveTextContent('Computer played'),
+    { timeout: MIN_THINKING_MS * 4 },
+  );
+  expect(engine.calls).toContain('chooseMove');
+}
+
+describe('showing the pieces on purpose', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it('offers no reveal while the pieces are already on the board', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine());
+
+    await user.click(screen.getByTestId('engine-visibility-always'));
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+
+    expect(pieceCount()).toBe(32);
+    expect(screen.queryByTestId('engine-show-pieces')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('engine-hide-pieces')).not.toBeInTheDocument();
+  });
+
+  it('reveals the whole position, every piece on its own square', async () => {
+    const user = userEvent.setup();
+    const engine = fakeEngine({ moves: ['e7e5'] });
+    await renderGame(engine);
+    await hiddenGameAfterOneMove(user, engine);
+
+    expect(pieceCount()).toBe(0);
+    await user.click(screen.getByTestId('engine-show-pieces'));
+
+    // Not "a board appeared" — the *right* board. Both pawns have moved, both
+    // origin squares are empty, and the back ranks are untouched.
+    expect(pieceCount()).toBe(32);
+    expect(pieceAt('e4')).toBe('white pawn');
+    expect(pieceAt('e5')).toBe('black pawn');
+    expect(pieceAt('e2')).toBe('');
+    expect(pieceAt('e7')).toBe('');
+    expect(pieceAt('e1')).toBe('white king');
+    expect(pieceAt('d8')).toBe('black queen');
+    expect(pieceAt('b1')).toBe('white knight');
+  });
+
+  it('hides them again and gives the empty input grid back', async () => {
+    const user = userEvent.setup();
+    const engine = fakeEngine({ moves: ['e7e5'] });
+    await renderGame(engine);
+    await hiddenGameAfterOneMove(user, engine);
+
+    await user.click(screen.getByTestId('engine-show-pieces'));
+    expect(pieceCount()).toBe(32);
+
+    await user.click(screen.getByTestId('engine-hide-pieces'));
+    expect(pieceCount()).toBe(0);
+    // The grid the user enters moves on must survive the round trip: this is
+    // the exact failure a real device reported, and hiding by any other means
+    // would reintroduce it.
+    expect(screen.getByTestId('board')).toHaveAttribute('data-display-mode', 'empty-input');
+    expect(usableSquares()).toHaveLength(64);
+    expect(screen.getByTestId('engine-show-pieces')).toBeInTheDocument();
+  });
+
+  it('keeps the game intact across a reveal and a hide', async () => {
+    const user = userEvent.setup();
+    const engine = fakeEngine({ moves: ['e7e5'] });
+    await renderGame(engine);
+    await user.click(screen.getByTestId('engine-history-full'));
+    await hiddenGameAfterOneMove(user, engine);
+
+    const callsBefore = [...engine.calls];
+
+    await user.click(screen.getByTestId('engine-show-pieces'));
+    await user.click(screen.getByTestId('engine-hide-pieces'));
+
+    // Same position, same move list, same side to move, and the engine was
+    // neither asked for anything nor stopped.
+    expect(screen.getByTestId('engine-moves')).toHaveTextContent('1. e4 e5');
+    expect(screen.getByTestId('engine-turn')).toHaveTextContent('Your move');
+    expect(screen.getByTestId('engine-last-move')).toHaveTextContent('e5');
+    expect(engine.calls).toEqual(callsBefore);
+  });
+
+  it('lets the user carry on playing after hiding again', async () => {
+    const user = userEvent.setup();
+    const engine = fakeEngine({ moves: ['e7e5', 'b8c6'] });
+    await renderGame(engine);
+    await user.click(screen.getByTestId('engine-history-full'));
+    await hiddenGameAfterOneMove(user, engine);
+
+    await user.click(screen.getByTestId('engine-show-pieces'));
+    await user.click(screen.getByTestId('engine-hide-pieces'));
+
+    await tapMove(user, 'g1', 'f3');
+    await waitFor(() => expect(screen.getByTestId('engine-moves')).toHaveTextContent('2. Nf3 Nc6'), {
+      timeout: MIN_THINKING_MS * 4,
+    });
+    expect(pieceCount()).toBe(0);
+  });
+
+  it('lets the user play while the pieces are revealed, and keeps them current', async () => {
+    const user = userEvent.setup();
+    const engine = fakeEngine({ moves: ['e7e5', 'b8c6'] });
+    await renderGame(engine);
+    await hiddenGameAfterOneMove(user, engine);
+
+    await user.click(screen.getByTestId('engine-show-pieces'));
+    await tapMove(user, 'g1', 'f3');
+
+    await waitFor(() => expect(pieceAt('c6')).toBe('black knight'), {
+      timeout: MIN_THINKING_MS * 4,
+    });
+    expect(pieceAt('f3')).toBe('white knight');
+    expect(pieceAt('g1')).toBe('');
+    // Still a reveal, not a settings change.
+    expect(screen.getByTestId('engine-hide-pieces')).toBeInTheDocument();
+  });
+
+  it('reveals while the computer is thinking, without disturbing the reply', async () => {
+    const user = userEvent.setup();
+    const engine = fakeEngine({ moves: ['e7e5'] });
+    await renderGame(engine);
+
+    await user.click(screen.getByTestId('engine-visibility-never'));
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+    await tapMove(user, 'e2', 'e4');
+    await waitFor(() => expect(screen.getByTestId('engine-turn')).toHaveTextContent(/thinking/i));
+
+    // Mid-search. The user's own move must be visible, and the reply must
+    // still arrive: the reveal is render state and touches no turn token,
+    // timer or search.
+    await user.click(screen.getByTestId('engine-show-pieces'));
+    expect(pieceAt('e4')).toBe('white pawn');
+    expect(screen.getByTestId('engine-turn')).toHaveTextContent(/thinking/i);
+
+    await waitFor(() => expect(pieceAt('e5')).toBe('black pawn'), {
+      timeout: MIN_THINKING_MS * 4,
+    });
+    expect(screen.getByTestId('engine-turn')).toHaveTextContent('Your move');
+    expect(engine.calls).not.toContain('stop');
+  });
+
+  it('works on "First 6 plies", which hides the board part-way through', async () => {
+    const user = userEvent.setup();
+    const engine = fakeEngine({ moves: ['e7e5', 'b8c6', 'g8f6'] });
+    await renderGame(engine);
+
+    // The default; stated explicitly because this test is about it.
+    await user.click(screen.getByTestId('engine-visibility-first-moves'));
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+
+    // Pieces are still on the board, so there is nothing to reveal yet.
+    expect(pieceCount()).toBe(32);
+    expect(screen.queryByTestId('engine-show-pieces')).not.toBeInTheDocument();
+
+    await tapMove(user, 'e2', 'e4');
+    await waitFor(() => expect(pieceAt('e5')).toBe('black pawn'), { timeout: MIN_THINKING_MS * 4 });
+    await tapMove(user, 'g1', 'f3');
+    await waitFor(() => expect(pieceAt('c6')).toBe('black knight'), { timeout: MIN_THINKING_MS * 4 });
+    await tapMove(user, 'f1', 'c4');
+
+    // Six plies: the board goes away on its own, and the control appears.
+    await waitFor(() => expect(pieceCount()).toBe(0), { timeout: MIN_THINKING_MS * 4 });
+    const reveal = await screen.findByTestId('engine-show-pieces');
+
+    await user.click(reveal);
+    expect(pieceAt('c4')).toBe('white bishop');
+    expect(pieceAt('f6')).toBe('black knight');
+    expect(pieceAt('f3')).toBe('white knight');
+  });
+
+  it('is a reveal, not a settings change: a resumed game comes back hidden', async () => {
+    const user = userEvent.setup();
+    const engine = fakeEngine({ moves: ['e7e5'] });
+    const first = await renderGame(engine);
+    await hiddenGameAfterOneMove(user, engine);
+
+    // Reveal and walk away without hiding again. If the reveal had been
+    // written into the visibility setting, or saved, the game would come back
+    // with the pieces on show and the blindfold quietly switched off.
+    await user.click(screen.getByTestId('engine-show-pieces'));
+    expect(pieceCount()).toBe(32);
+    first.unmount();
+
+    await renderGame(fakeEngine({ moves: ['b8c6'] }));
+    await user.click(await screen.findByTestId('engine-resume-yes'));
+    await screen.findByTestId('engine-game');
+
+    expect(pieceCount()).toBe(0);
+    expect(screen.getByTestId('board')).toHaveAttribute('data-display-mode', 'empty-input');
+    expect(screen.getByTestId('engine-show-pieces')).toBeInTheDocument();
+    expect(screen.queryByTestId('engine-hide-pieces')).not.toBeInTheDocument();
+  });
+
+  it('reveals a resumed position correctly, and stays playable', async () => {
+    const user = userEvent.setup();
+    const engine = fakeEngine({ moves: ['e7e5'] });
+    const first = await renderGame(engine);
+    await user.click(screen.getByTestId('engine-history-full'));
+    await hiddenGameAfterOneMove(user, engine);
+    first.unmount();
+
+    await renderGame(fakeEngine({ moves: ['b8c6'] }));
+    await user.click(await screen.findByTestId('engine-resume-yes'));
+    await screen.findByTestId('engine-game');
+
+    // The reveal must reflect the replayed position, not a fresh board.
+    await user.click(screen.getByTestId('engine-show-pieces'));
+    expect(pieceAt('e4')).toBe('white pawn');
+    expect(pieceAt('e5')).toBe('black pawn');
+    expect(pieceAt('e2')).toBe('');
+
+    await user.click(screen.getByTestId('engine-hide-pieces'));
+    await tapMove(user, 'g1', 'f3');
+    await waitFor(() => expect(screen.getByTestId('engine-moves')).toHaveTextContent('Nf3'), {
+      timeout: MIN_THINKING_MS * 4,
+    });
+  });
+
+  it('keeps hidden-board discipline while the pieces are away', async () => {
+    const user = userEvent.setup();
+    const engine = fakeEngine({ moves: ['e7e5'] });
+    await renderGame(engine);
+    await hiddenGameAfterOneMove(user, engine);
+
+    await user.click(screen.getByTestId('engine-show-pieces'));
+    await user.click(screen.getByTestId('engine-hide-pieces'));
+
+    // After a round trip the hidden board must still give nothing away.
+    for (const square of usableSquares()) {
+      const label = square.getAttribute('aria-label') ?? '';
+      expect(label, label).not.toMatch(/pawn|knight|bishop|rook|queen|king/i);
+    }
+    await user.click(screen.getByTestId('square-g1'));
+    expect(document.querySelectorAll('.square--hint')).toHaveLength(0);
+  });
+});

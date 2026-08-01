@@ -139,6 +139,20 @@ Every computer turn carries a token. Resign, Try again, Play again, unmount
 and backgrounding all invalidate it, so a reply arriving afterwards is dropped
 rather than played onto a game that has moved on.
 
+## Seeing the position on purpose
+
+While the settings are hiding the pieces the screen offers **Show pieces**, and
+then **Hide pieces**. The distinction that keeps it safe is between
+`boardVisible` — what the setting says, and therefore whether a reveal is
+offered at all — and `showPieces` — what is drawn this render, which everything
+on screen keys off.
+
+`piecesRevealed` is component state only. It is never merged into `visibility`,
+never reaches `buildSave`, and is cleared by `beginGame` and `resumeGame`, so
+the blindfold cannot be switched off by accident and a resumed game always
+comes back hidden. Being render state alone it touches no turn token, timer or
+search — pressing it mid-search cannot disturb the reply in flight.
+
 ## Lifecycle across backgrounding
 
 Hiding the app abandons the turn and records that the computer still owes a

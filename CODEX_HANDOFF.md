@@ -14,17 +14,19 @@ buried.
 | Phase A completion | `67a442b` — presets, progress model, real-Chromium review |
 | Engine commit | `3cb106d` — the offline Stockfish opponent |
 | Repair pass | `e45104c`, `163cb51`, `85d933a`, `d38e59e`, `91b4675` — the four device-reported failures and the release pipeline |
-| App version | **2.1.0** (`src/core/version.ts` is the source of truth) |
-| Android versionCode | 20100 (derived: major×10000 + minor×100 + patch) |
+| Reveal control | 2.2.0 — Show/Hide pieces in the engine game, without touching the visibility setting |
+| App version | **2.2.0** (`src/core/version.ts` is the source of truth) |
+| Android versionCode | 20200 (derived: major×10000 + minor×100 + patch) |
 | Storage schema | **1, unchanged** — the blindfold fields are optional |
 | Backup format | `bight-backup`, schemaVersion 1; 1.3.0 backups import untouched |
 | Licence | **GPL-3.0-or-later.** 1.4.0 was the last engine-free MIT build. |
-| Tests | Vitest, **982 across 35 files**, plus 48 layout + 36 blindfold-layout checks |
+| Tests | Vitest, **993 across 35 files**, plus 48 layout + 64 blindfold-layout checks |
 
 ### APKs
 
 | File | Size | SHA-256 | Engine | Licence |
 | --- | --- | --- | --- | --- |
+| `release/Bight-v2.2.0-GPL-engine.apk` | 59.71 MB | `8346b925cd507e5d72766d3b9e4c777841f8948ff4f3b5c794d8dea09e51f6c4` | yes | GPLv3 |
 | `release/Bight-v2.1.0-GPL-engine.apk` | 59.71 MB | `afe1681a2f21218c2a46efd7438550753b44e2e78fc8fee597f4d00f856708d6` | yes | GPLv3 |
 | `release/Bight.apk` | 59.71 MB | byte-identical convenience copy of the above | yes | GPLv3 |
 | `release/Bight-v1.4.0-MIT-blindfold.apk` | 54.31 MB | `55a36c07eb5a53b47054cc5522b529a15c20fdad7bb9c6abd0a0d56fc32ad7d2` | **no** | MIT |

@@ -57,3 +57,6 @@ public/models/*.tar.gz
 # Stockfish engine assets are copied out of node_modules by
 # scripts/prepare-engine.mjs. 7 MB of WebAssembly should not be in git.
 public/engine/
+
+# Vite writes these while resolving the config and does not always clean up
+vite.config.ts.timestamp-*.mjs

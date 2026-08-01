@@ -208,6 +208,83 @@ try {
       { timeout: 30000 },
     );
     assert(true, `${viewport.name}: a move can be entered on the hidden grid`);
+
+    /* ---- Show pieces / Hide pieces ------------------------------------ *
+     * A reveal that is off-screen, too small to press, or that pushes the
+     * page sideways is no use to someone who has lost the position. jsdom
+     * cannot answer any of that.
+     * ------------------------------------------------------------------ */
+    const revealButton = await page.evaluate(() => {
+      const el = document.querySelector('[data-testid="engine-show-pieces"]');
+      if (el === null) return null;
+      const rect = el.getBoundingClientRect();
+      return {
+        height: Math.round(rect.height),
+        width: Math.round(rect.width),
+        inViewport: rect.top >= 0 && rect.left >= 0 && rect.right <= window.innerWidth,
+        overflow: document.documentElement.scrollWidth > window.innerWidth,
+      };
+    });
+    assert(
+      revealButton !== null,
+      `${viewport.name}: the hidden board offers a way to see the pieces`,
+    );
+    assert(
+      revealButton !== null && revealButton.height >= 44,
+      `${viewport.name}: the reveal control meets the touch target`,
+      `${revealButton?.height}px tall`,
+    );
+    assert(
+      revealButton?.inViewport === true && revealButton.overflow === false,
+      `${viewport.name}: the reveal control is on screen and does not push the page sideways`,
+    );
+
+    await click('[data-testid="engine-show-pieces"]');
+    const revealed = await squareGeometry();
+    assert(
+      revealed.pieces === 32,
+      `${viewport.name}: revealing draws the whole position`,
+      `${revealed.pieces} pieces`,
+    );
+    // The position, not just some position: the pawn that was actually played
+    // has to be on e4 and gone from e2.
+    const placement = await page.evaluate(() => ({
+      e4: document.querySelector('[data-testid="square-e4"]')?.getAttribute('aria-label') ?? '',
+      e2: document.querySelector('[data-testid="square-e2"]')?.getAttribute('aria-label') ?? '',
+    }));
+    assert(
+      placement.e4.includes('white pawn') && placement.e2 === 'e2',
+      `${viewport.name}: the revealed position matches the moves played`,
+      `e4="${placement.e4}", e2="${placement.e2}"`,
+    );
+
+    await click('[data-testid="engine-hide-pieces"]');
+    const rehidden = await squareGeometry();
+    assert(
+      rehidden.pieces === 0 && rehidden.visible === 64,
+      `${viewport.name}: hiding again restores the empty input grid`,
+      `${rehidden.pieces} pieces, ${rehidden.visible} squares`,
+    );
+
+    // And the game is still playable afterwards. The computer has to have
+    // finished first — input is refused while it is thinking, which is the
+    // behaviour, not a fault.
+    await page.waitForFunction(
+      () =>
+        document.querySelector('[data-testid="engine-turn"]')?.textContent?.includes('Your move') ??
+        false,
+      { timeout: 60000 },
+    );
+    await click('[data-testid="square-g1"]');
+    await click('[data-testid="square-f3"]');
+    // The move counter, not the move text: whatever the engine answers with
+    // replaces the latest-move line a moment later.
+    await page.waitForFunction(
+      () =>
+        (document.querySelector('.blindfold__count')?.textContent ?? '').includes('Move 2'),
+      { timeout: 30000 },
+    );
+    assert(true, `${viewport.name}: a move can still be entered after a reveal and a hide`);
   }
 } catch (error) {
   assert(false, 'harness', error.message);

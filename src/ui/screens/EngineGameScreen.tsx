@@ -115,6 +115,16 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
   const [history, setHistory] = useState<GameHistoryMode>('latest-only');
   /** True once the user has revealed a hidden history this game. */
   const [historyRevealed, setHistoryRevealed] = useState(false);
+  /*
+   * A deliberate, temporary look at the position.
+   *
+   * Kept separate from `visibility` on purpose. Losing the thread mid-game
+   * should cost you a peek, not your settings: folding this into `visibility`
+   * would silently switch the blindfold off for the rest of the game and for
+   * every game after it, and it is never written to the save, so a resumed
+   * game always comes back blindfolded.
+   */
+  const [piecesRevealed, setPiecesRevealed] = useState(false);
   const [speakMoves, setSpeakMoves] = useState(false);
   /** A saved unfinished game found on entry, offered as Resume. */
   const [resumable, setResumable] = useState<RestoredGame | null>(null);
@@ -304,6 +314,7 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
 
   const beginGame = useCallback(async () => {
     setEngineError(null);
+    setPiecesRevealed(false);
     const fresh = startGame(side);
     setGame(fresh);
     setPhase('playing');
@@ -447,6 +458,9 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
       setHistory(restored.saved.history as GameHistoryMode);
       setSpeakMoves(restored.saved.speakMoves);
       setHistoryRevealed(false);
+      // A resumed game starts blindfolded again, whatever was on screen when
+      // it was put down. The reveal is a moment, not a mode.
+      setPiecesRevealed(false);
       setGame(restored.state);
       setPhase('playing');
       setStarting(true);
@@ -629,10 +643,20 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
 
   if (game === null) return <p className="empty-note">Starting the engine…</p>;
 
+  /*
+   * Two different questions, deliberately kept apart.
+   *
+   * `boardVisible` is what the settings say: it decides whether a reveal is
+   * even on offer. `showPieces` is what is actually drawn this render, and it
+   * is what everything on screen keys off. Collapsing the two would make the
+   * reveal indistinguishable from a settings change, which is the one thing
+   * it must not be.
+   */
   const boardVisible =
     visibility === 'always' ||
     (visibility === 'first-moves' && game.history.length < 6) ||
     game.result.kind !== 'in-progress';
+  const showPieces = boardVisible || piecesRevealed;
 
   const lastMove = game.history[game.history.length - 1];
 
@@ -670,9 +694,10 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
     /*
      * Legal destinations are shown only when the pieces are. On a hidden
      * board they would hand over the position one tap at a time — select a
-     * square, read off what stands there from where it may go.
+     * square, read off what stands there from where it may go. Once the user
+     * has deliberately revealed the position there is nothing left to protect.
      */
-    if (boardVisible) {
+    if (showPieces) {
       for (const square of legalDestinations(game, origin)) marks.set(square, 'hint');
     }
   }
@@ -756,7 +781,16 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
               ? 'No moves yet'
               : `Move ${Math.ceil(game.history.length / 2)}`}
           </span>
-          {!boardVisible ? <span className="blindfold__tag">No board</span> : null}
+          {/* The tag reports what is actually on screen. Saying "No board"
+              over a revealed position would be plainly untrue, and saying
+              nothing would hide the fact that the user is currently peeking. */}
+          {!showPieces ? (
+            <span className="blindfold__tag">No board</span>
+          ) : !boardVisible ? (
+            <span className="blindfold__tag" data-testid="engine-peeking">
+              Pieces shown
+            </span>
+          ) : null}
         </div>
         {/* The move list obeys the history setting. Hidden leaves no blank
             gap — the element is simply not rendered — and the reveal action
@@ -810,9 +844,48 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
         orientation={game.userSide}
         labels="always"
         marks={marks}
-        displayMode={boardVisible ? 'position' : 'empty-input'}
+        displayMode={showPieces ? 'position' : 'empty-input'}
         onSquareTap={tapSquare}
       />
+
+      {/*
+       * Being stuck should not end the game.
+       *
+       * Offered only while the settings are hiding the pieces, so it never
+       * appears on a board that is already visible or on a finished game. It
+       * is pure render state: no turn token, no timer, no engine call, so it
+       * is safe to press mid-search and cannot disturb a reply in flight.
+       */}
+      {!boardVisible ? (
+        <div className="button-row" style={{ marginTop: 'var(--gap)' }}>
+          {piecesRevealed ? (
+            <button
+              type="button"
+              className="button"
+              data-testid="engine-hide-pieces"
+              onClick={() => setPiecesRevealed(false)}
+            >
+              Hide pieces
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="button"
+              data-testid="engine-show-pieces"
+              onClick={() => setPiecesRevealed(true)}
+            >
+              Show pieces
+            </button>
+          )}
+        </div>
+      ) : null}
+      {!boardVisible ? (
+        <p className="card__subtitle" data-testid="engine-reveal-note">
+          {piecesRevealed
+            ? 'A temporary look. Hiding them again returns you to blindfold play; your settings were not changed.'
+            : 'Lost the position? Look at it, then hide it again. The game carries on either way.'}
+        </p>
+      ) : null}
 
       {promotion !== null ? (
         <div className="card" data-testid="engine-promotion">

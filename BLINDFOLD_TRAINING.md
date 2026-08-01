@@ -162,6 +162,30 @@ nothing about the hidden position may leak: no pieces, no legal-destination
 marks, no piece names in square labels. Last-move marks are allowed, because
 the user can already read the move in SAN.
 
+### Looking on purpose
+
+Blindfold vs Computer offers **Show pieces** whenever the settings are hiding
+them, and **Hide pieces** to go back. Being stuck should cost a peek, not the
+game.
+
+Two separate values keep this honest, and they must not be collapsed into one:
+
+| Value | Means | Decides |
+| --- | --- | --- |
+| `boardVisible` | what the visibility *setting* says | whether a reveal is offered at all |
+| `showPieces` | what is drawn *this render* | the display mode, the hints, the status tag |
+
+`piecesRevealed` is component state and nothing else. It is never written to
+`visibility`, never included in `buildSave`, and is reset by both `beginGame`
+and `resumeGame` — so a resumed game always comes back blindfolded, and one
+peek cannot silently disable the blindfold for every game afterwards.
+
+Because it is render state alone, it touches no turn token, presentation timer
+or search, and is therefore safe to press while the computer is thinking. While
+revealed, legal-destination hints come back too: the "no hints on a hidden
+board" rule exists to stop the position being read out one tap at a time, and
+there is nothing left to protect once the user has chosen to look.
+
 ## Reconstruction
 
 Three variants, all answered with `ExpectedAnswer.kind === 'placement'`.

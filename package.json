@@ -1,6 +1,6 @@
 {
   "name": "bight",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Bight - board sight. An offline chess coordinate and board-vision trainer.",
   "private": true,
   "type": "module",

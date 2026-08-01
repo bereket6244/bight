@@ -12,15 +12,15 @@ in `release/RELEASES.md`; version history is in `CHANGELOG.md`.
 | --- | --- |
 | Branch | `main` |
 | Remote | `https://github.com/bereket6244/bight` (private) |
-| Latest tag | `v2.1.0-gpl-engine` |
+| Latest tag | `v2.2.0-gpl-engine` |
 
 ## Application
 
 | | |
 | --- | --- |
 | App name | Bight |
-| Version | **2.1.0** (source of truth: `src/core/version.ts`) |
-| Android versionCode | 20100 |
+| Version | **2.2.0** (source of truth: `src/core/version.ts`) |
+| Android versionCode | 20200 |
 | Package identifier | `io.github.bereketgirma.bight` |
 | Storage schema | 1 (unchanged; the blindfold fields are optional) |
 | Engine-game save format | 1 (`bight.engineGame.v1`, local only, not part of backups) |
@@ -40,12 +40,12 @@ if the paperwork stops matching the binary.
 
 | | |
 | --- | --- |
-| Built from commit | `38395ce` (the merge of the blindfold branch into `main`) |
-| Authoritative artifact | `release/Bight-v2.1.0-GPL-engine.apk` |
+| Built from commit | `25b1892` on `main` |
+| Authoritative artifact | `release/Bight-v2.2.0-GPL-engine.apk` |
 | Convenience copy | `release/Bight.apk` (byte-identical) |
-| Checksum file | `release/Bight-v2.1.0-GPL-engine.apk.sha256` |
-| Size | **59.71 MB** (62,607,085 bytes) |
-| SHA-256 | `afe1681a2f21218c2a46efd7438550753b44e2e78fc8fee597f4d00f856708d6` |
+| Checksum file | `release/Bight-v2.2.0-GPL-engine.apk.sha256` |
+| Size | **59.71 MB** (62,607,348 bytes) |
+| SHA-256 | `8346b925cd507e5d72766d3b9e4c777841f8948ff4f3b5c794d8dea09e51f6c4` |
 | Variant | debug (**debug-signed** — no production key exists for this project, and none was fabricated) |
 | Gradle | `BUILD SUCCESSFUL` |
 
@@ -81,9 +81,9 @@ silently replace a different binary already published under the same version.
 | --- | --- |
 | `npx tsc --noEmit` | pass |
 | `npx eslint src scripts` | pass |
-| `npm test` | **982 tests in 35 files** |
+| `npm test` | **993 tests in 35 files** |
 | `npm run test:browser` | 48 layout checks, 4 viewports |
-| `npm run test:layout` | 36 blindfold layout checks, 4 viewports |
+| `npm run test:layout` | 64 blindfold layout checks, 4 viewports |
 | `npm run test:blindfold` | 15 flows in real Chromium |
 | `npm run test:engine` | engine smoke, a real game, difficulty behaviour |
 | `npm run verify:licenses` | pass |
@@ -94,15 +94,15 @@ silently replace a different binary already published under the same version.
 
 **This build has not been run on an Android device or emulator.**
 
-The previous build (2.0.0) *was*, by the repository owner, and four failures
-were found. All four are repaired here and each is covered by tests plus
-real-Chromium verification — but Chromium on a desktop is not a phone, and
+The last build anyone ran on a phone was 2.0.0, by the repository owner, and
+four failures were found. All four were repaired in 2.1.0 and remain repaired
+here, each covered by tests plus real-Chromium verification — but Chromium on a desktop is not a phone, and
 nothing below should be described as device-verified until someone runs it.
 
 ### Device retest checklist
 
-1. Install `release/Bight-v2.1.0-GPL-engine.apk`.
-2. Confirm the version in Settings → About reads **2.1.0**.
+1. Install `release/Bight-v2.2.0-GPL-engine.apk`.
+2. Confirm the version in Settings → About reads **2.2.0**.
 3. Start Blindfold vs Computer as White, board **Never**.
 4. Enter e2–e4 on the empty grid. **This is the bug that made 2.0.0
    unplayable**: the grid must be visible and tappable with no pieces on it.
@@ -124,6 +124,10 @@ nothing below should be described as device-verified until someone runs it.
     revealable.
 14. Turn on **Read moves aloud** and confirm both your move and the computer's
     are spoken.
-15. Confirm ordinary drills — coordinates, knight vision, forks — are unchanged.
+15. With the pieces hidden, press **Show pieces**: the whole position must
+    appear, correct to the moves played. Press **Hide pieces**: the empty grid
+    must come back and the game stay playable. Leave, re-enter and Resume — it
+    must come back blindfolded, with the visibility setting unchanged.
+16. Confirm ordinary drills — coordinates, knight vision, forks — are unchanged.
 
 Report anything that fails with the version from step 2.

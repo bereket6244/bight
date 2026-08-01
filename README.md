@@ -150,6 +150,10 @@ The move you played and the computer's reply are marked on it in amber and
 stated in words, and the computer always takes a moment so you can tell that
 something happened.
 
+Lost the position? **Show pieces** draws it in full, and **Hide pieces** puts
+the blindfold back on. It is a look, not a setting: your choice of what to show
+is untouched, and a game you come back to is hidden again.
+
 Four opponent levels — Beginner, Easy, Intermediate, Strong. They are described
 by how they play, never by a rating: Beginner hangs material and misses simple
 threats; Strong plays properly. **No Elo is claimed**, because none has been
