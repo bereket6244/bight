@@ -21,7 +21,7 @@ project and none has been fabricated.
 
 | Version | Tag | File | Commit | Engine | Licence | Size | SHA-256 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| **2.1.0** | `v2.1.0-gpl-engine` | `Bight-v2.1.0-GPL-engine.apk` | `d38e59e` | Stockfish 18 lite | GPL-3.0-or-later | 59.71 MB | `afe1681a2f21218c2a46efd7438550753b44e2e78fc8fee597f4d00f856708d6` |
+| **2.1.0** | `v2.1.0-gpl-engine` | `Bight-v2.1.0-GPL-engine.apk` | `38395ce` | Stockfish 18 lite | GPL-3.0-or-later | 59.71 MB | `afe1681a2f21218c2a46efd7438550753b44e2e78fc8fee597f4d00f856708d6` |
 | 2.0.0 | `v2.0.0-gpl-engine` | not kept in the tree | `171ad51` | Stockfish 18 lite | GPL-3.0-or-later | 59.70 MB | `2f8d92e7358b487bad0f2a27e844358bf03691e14906d97879d9017b96eaa166` |
 | 1.4.0 | `v1.4.0-mit-blindfold` | `Bight-v1.4.0-MIT-blindfold.apk` | `67a442b` | none | MIT | 54.31 MB | `55a36c07eb5a53b47054cc5522b529a15c20fdad7bb9c6abd0a0d56fc32ad7d2` |
 

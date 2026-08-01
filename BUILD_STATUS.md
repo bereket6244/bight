@@ -40,6 +40,7 @@ if the paperwork stops matching the binary.
 
 | | |
 | --- | --- |
+| Built from commit | `38395ce` (the merge of the blindfold branch into `main`) |
 | Authoritative artifact | `release/Bight-v2.1.0-GPL-engine.apk` |
 | Convenience copy | `release/Bight.apk` (byte-identical) |
 | Checksum file | `release/Bight-v2.1.0-GPL-engine.apk.sha256` |
