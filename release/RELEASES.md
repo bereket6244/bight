@@ -88,7 +88,18 @@ engine, under MIT. Still a good build if the GPL obligation is unwanted.
 ## Getting a build
 
 Preferred: the GitHub Release for the tag, which carries the APK and its
-`.sha256`.
+`.sha256`. All four tags have one, on a private repository, so the links need
+an authenticated account:
+
+| Tag | Release | APK attached |
+| --- | --- | --- |
+| [`v2.1.0-gpl-engine`](https://github.com/bereket6244/bight/releases/tag/v2.1.0-gpl-engine) | Bight 2.1.0 — the repairs a real phone found | yes, 59.71 MB + `.sha256` |
+| [`v2.0.0-gpl-engine`](https://github.com/bereket6244/bight/releases/tag/v2.0.0-gpl-engine) | Bight 2.0.0 — offline Stockfish | no — binary not kept |
+| [`v1.4.0-mit-blindfold`](https://github.com/bereket6244/bight/releases/tag/v1.4.0-mit-blindfold) | Bight 1.4.0 — blindfold training, MIT | yes, 54.31 MB + `.sha256` |
+| [`v1.3.0-mit-engine-free`](https://github.com/bereket6244/bight/releases/tag/v1.3.0-mit-engine-free) | Bight 1.3.0 — last MIT, engine-free | no — binary not kept |
+
+The releases without an APK say so in their own notes rather than appearing
+merely empty; both are rebuildable from their tag.
 
 If no GitHub Release exists for a tag, the versioned APK in `release/` at that
 tag is the artifact. Verify it before installing:
