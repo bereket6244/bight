@@ -39,6 +39,14 @@ import { speak } from '../../services/speech';
 import { vibrate } from '../../services/haptics';
 import { playTone } from '../../services/sound';
 import { useApp } from '../state/AppContext';
+import {
+  buildSave,
+  describeSave,
+  restoreSave,
+  SAVED_GAME_KEY,
+  type RestoredGame,
+} from '../../core/engineGame/savedGame';
+import { APP_VERSION } from '../../core/version';
 
 /** How long a rejected move stays red. */
 const FLASH_MS = 420;
@@ -65,6 +73,22 @@ const VISIBILITY_LABELS: Record<GameVisibility, string> = {
   never: 'Never',
 };
 
+/**
+ * How much of the move list the user keeps.
+ *
+ * The full score sheet was previously shown unconditionally, which quietly
+ * removed most of the difficulty: remembering the position is easy when every
+ * move is still on screen.
+ */
+type GameHistoryMode = 'full' | 'latest-only' | 'hidden' | 'hidden-reveal';
+
+const HISTORY_LABELS: Record<GameHistoryMode, string> = {
+  full: 'All moves',
+  'latest-only': 'Last move',
+  hidden: 'Hidden',
+  'hidden-reveal': 'Hidden, revealable',
+};
+
 export interface EngineGameScreenProps {
   onExit: () => void;
   /** Injected in tests so the screen can be driven without real Stockfish. */
@@ -80,7 +104,20 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
   const [side, setSide] = useState<PieceColor>('white');
   const [difficulty, setDifficulty] = useState<EngineDifficulty>('easy');
   const [visibility, setVisibility] = useState<GameVisibility>('first-moves');
+  /*
+   * How much of the move list the user keeps.
+   *
+   * Defaults to `latest-only`: showing the whole score sheet is not blindfold
+   * play, and showing nothing at all makes a first game unreasonably hard. The
+   * latest move is always available long enough to perceive the reply unless
+   * the user deliberately chooses otherwise.
+   */
+  const [history, setHistory] = useState<GameHistoryMode>('latest-only');
+  /** True once the user has revealed a hidden history this game. */
+  const [historyRevealed, setHistoryRevealed] = useState(false);
   const [speakMoves, setSpeakMoves] = useState(false);
+  /** A saved unfinished game found on entry, offered as Resume. */
+  const [resumable, setResumable] = useState<RestoredGame | null>(null);
 
   const [game, setGame] = useState<EngineGameState | null>(null);
   const [engineError, setEngineError] = useState<string | null>(null);
@@ -97,6 +134,8 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
   const turnToken = useRef(0);
   /** The presentation delay in flight, cleared on unmount and on abandon. */
   const thinkingTimer = useRef<number | null>(null);
+  /** True when backgrounding cut a computer turn short and it is still owed. */
+  const interruptedTurn = useRef(false);
   /** The live game, so callbacks can read it without depending on it. */
   const gameRef = useRef<EngineGameState | null>(null);
   gameRef.current = game;
@@ -110,6 +149,48 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
     () => engineFactory !== getEngine || engineSupported(),
     [engineFactory],
   );
+
+  /*
+   * An unfinished game is written after every move and replayed on the way
+   * back in. Only the moves are stored; the position is rebuilt through
+   * chess.js, so a save can never disagree with the rules.
+   */
+  useEffect(() => {
+    if (game === null) return;
+    const record = buildSave({
+      state: game,
+      difficulty,
+      visibility,
+      history,
+      speakMoves,
+      appVersion: APP_VERSION,
+    });
+    try {
+      if (record === null) window.localStorage.removeItem(SAVED_GAME_KEY);
+      else window.localStorage.setItem(SAVED_GAME_KEY, JSON.stringify(record));
+    } catch {
+      // Storage may be full or blocked. Losing the ability to resume is not
+      // worth interrupting a game over.
+    }
+  }, [difficulty, game, history, speakMoves, visibility]);
+
+  // Look for a resumable game once, on entry.
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(SAVED_GAME_KEY);
+      if (raw === null) return;
+      const restored = restoreSave(JSON.parse(raw));
+      if (restored === null) {
+        // Unreadable, from an older format, or already finished. Discard it
+        // rather than trying to interpret it.
+        window.localStorage.removeItem(SAVED_GAME_KEY);
+        return;
+      }
+      setResumable(restored);
+    } catch {
+      // A corrupt save must not stop the screen from opening.
+    }
+  }, []);
 
   /*
    * The engine is shut down when this screen goes away, whatever the reason:
@@ -126,23 +207,6 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
     };
   }, []);
 
-  /*
-   * A backgrounded app must not keep a chess engine searching.
-   *
-   * `stop` only abandons the current search; the Worker stays alive and the
-   * game state is untouched, so returning to the app leaves the position
-   * exactly as it was. If the search was for the computer's move, it is the
-   * user's turn to notice nothing happened and the game is still playable —
-   * the alternative, a phone burning battery on a search nobody is waiting
-   * for, is worse.
-   */
-  useEffect(() => {
-    const onHidden = (): void => {
-      if (document.visibilityState === 'hidden') void engineRef.current?.stop();
-    };
-    document.addEventListener('visibilitychange', onHidden);
-    return () => document.removeEventListener('visibilitychange', onHidden);
-  }, []);
 
   /**
    * Invalidates the computer turn in flight, if any.
@@ -265,6 +329,47 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
   }, [difficulty, engineFactory, failGame, side, takeEngineTurn]);
 
   /*
+   * Backgrounding and returning.
+   *
+   * A phone must not keep a chess engine searching for someone who has
+   * switched away. Stopping the search alone was not enough, though: it left
+   * `thinking` true with nothing running, so the game came back showing
+   * "Computer thinking…" for ever and the user could neither move nor wait.
+   *
+   * On hide: abandon the turn, and remember that the computer still owes a
+   * move. On show: play that move, once. Never twice, never silently changing
+   * whose turn it is, and never losing the move the user already made.
+   */
+  useEffect(() => {
+    const onVisibilityChange = (): void => {
+      if (document.visibilityState === 'hidden') {
+        const current = gameRef.current;
+        const owed =
+          current !== null &&
+          current.result.kind === 'in-progress' &&
+          current.turn !== current.userSide;
+        if (owed) interruptedTurn.current = true;
+        abandonEngineTurn();
+        return;
+      }
+
+      // Back in the foreground.
+      if (!interruptedTurn.current) return;
+      interruptedTurn.current = false;
+
+      const current = gameRef.current;
+      if (current === null || current.result.kind !== 'in-progress') return;
+      if (current.turn === current.userSide) return;
+      if (engineRef.current === null) return;
+
+      void takeEngineTurn(current);
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, [abandonEngineTurn, takeEngineTurn]);
+
+  /*
    * Any presentation delay in flight is dropped when the screen goes away.
    * Bumping the token first means a reply that arrives during teardown is
    * recognised as stale and never applied.
@@ -325,6 +430,50 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
     [preferences.sound, speakMoves, takeEngineTurn],
   );
 
+  /**
+   * Picks a saved game back up.
+   *
+   * The settings come from the save, so the game resumes as it was played
+   * rather than as the setup screen currently reads. If the computer owed a
+   * move when the game was put down, exactly one is requested.
+   */
+  const resumeGame = useCallback(
+    async (restored: RestoredGame) => {
+      setEngineError(null);
+      setResumable(null);
+      setSide(restored.saved.userSide);
+      setDifficulty(restored.saved.difficulty as EngineDifficulty);
+      setVisibility(restored.saved.visibility as GameVisibility);
+      setHistory(restored.saved.history as GameHistoryMode);
+      setSpeakMoves(restored.saved.speakMoves);
+      setHistoryRevealed(false);
+      setGame(restored.state);
+      setPhase('playing');
+      setStarting(true);
+
+      try {
+        const engine = engineFactory();
+        engineRef.current = engine;
+        await engine.initialize();
+        setEngineName(engine.getStatus().name);
+        await engine.setDifficulty(restored.saved.difficulty as EngineDifficulty);
+        await engine.newGame();
+        setStarting(false);
+
+        if (restored.state.turn !== restored.state.userSide) {
+          await takeEngineTurn(restored.state);
+        }
+      } catch (error) {
+        setStarting(false);
+        failGame(
+          `The chess engine could not start: ${(error as Error).message}. ` +
+            'Every other mode is unaffected.',
+        );
+      }
+    },
+    [engineFactory, failGame, takeEngineTurn],
+  );
+
   const tapSquare = useCallback(
     (square: SquareName) => {
       if (game === null || game.result.kind !== 'in-progress') return;
@@ -371,6 +520,39 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
           sent anywhere.
         </p>
 
+        {/* A game left unfinished is offered back rather than discarded. */}
+        {resumable !== null ? (
+          <div className="card" data-testid="engine-resume">
+            <h2 className="card__title">Unfinished game</h2>
+            <p className="card__subtitle">{describeSave(resumable.saved)}</p>
+            <div className="button-row" style={{ marginTop: 'var(--gap)' }}>
+              <button
+                type="button"
+                className="button button--primary"
+                data-testid="engine-resume-yes"
+                onClick={() => void resumeGame(resumable)}
+              >
+                Resume
+              </button>
+              <button
+                type="button"
+                className="button"
+                data-testid="engine-resume-no"
+                onClick={() => {
+                  setResumable(null);
+                  try {
+                    window.localStorage.removeItem(SAVED_GAME_KEY);
+                  } catch {
+                    // Nothing to clean up if storage is unavailable.
+                  }
+                }}
+              >
+                Start a new game
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         <Choice
           label="You play"
           value={side}
@@ -405,6 +587,16 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
           }))}
           onChange={setVisibility}
           testId="engine-visibility"
+        />
+
+        <Choice
+          label="Move list"
+          value={history}
+          options={(
+            ['full', 'latest-only', 'hidden', 'hidden-reveal'] as GameHistoryMode[]
+          ).map((id) => ({ value: id, label: HISTORY_LABELS[id] }))}
+          onChange={setHistory}
+          testId="engine-history"
         />
 
         <Choice
@@ -443,6 +635,23 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
     game.result.kind !== 'in-progress';
 
   const lastMove = game.history[game.history.length - 1];
+
+  /**
+   * The move list as this history setting allows it, or null when there is
+   * nothing to show. Null renders no element at all rather than an empty one,
+   * so a hidden history leaves no blank strip behind.
+   *
+   * The "Computer played …" line is separate and always present: the latest
+   * move stays perceivable at every setting, which is what stops a hidden
+   * history from making the opponent's reply invisible.
+   */
+  const visibleHistoryText: string | null = (() => {
+    if (game.history.length === 0) return null;
+    if (history === 'full') return moveListText(game.history);
+    if (history === 'latest-only') return moveListText(game.history.slice(-1));
+    if (history === 'hidden-reveal' && historyRevealed) return moveListText(game.history);
+    return null;
+  })();
 
   const marks = new Map<SquareName, SquareMark>();
 
@@ -549,9 +758,25 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
           </span>
           {!boardVisible ? <span className="blindfold__tag">No board</span> : null}
         </div>
-        <p className="blindfold__moves" data-testid="engine-moves">
-          {moveListText(game.history) || ' '}
-        </p>
+        {/* The move list obeys the history setting. Hidden leaves no blank
+            gap — the element is simply not rendered — and the reveal action
+            only exists on the setting that offers it. */}
+        {visibleHistoryText !== null ? (
+          <p className="blindfold__moves" data-testid="engine-moves">
+            {visibleHistoryText || ' '}
+          </p>
+        ) : null}
+
+        {history === 'hidden-reveal' && !historyRevealed ? (
+          <button
+            type="button"
+            className="button"
+            data-testid="engine-reveal-history"
+            onClick={() => setHistoryRevealed(true)}
+          >
+            Show the moves
+          </button>
+        ) : null}
         {/* Who played what, in words. The last-move marks on the board are
             amber squares; on their own they would be information carried by
             colour alone, and on a hidden board they are all there is. This

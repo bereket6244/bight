@@ -97,7 +97,10 @@ function politeWorker(move = 'e2e4'): FakeWorker {
     } else if (command === 'isready') {
       emit('readyok');
     } else if (command.startsWith('go')) {
-      emit('info depth 1 score cp 20 pv e2e4');
+      // The reported line must name the move this worker is about to play.
+      // A fake that advertised one move and returned another would make the
+      // weak-play selection look broken when it is doing its job.
+      emit(`info depth 1 multipv 1 score cp 20 pv ${move}`);
       emit(`bestmove ${move} ponder e7e5`);
     }
   });

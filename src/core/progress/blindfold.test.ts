@@ -359,3 +359,61 @@ describe('spacing, retention and orientation', () => {
     expect(progress.overall.attempts).toBe(4);
   });
 });
+
+describe('the progressive stage survives the session', () => {
+  const stageAttempt = (visibility: string, correct: boolean, hints = 0) =>
+    attempt({ modeId: 'blindfold-progressive', boardVisibility: visibility, correct, hintsUsed: hints });
+
+  it('reports nothing before any stage has been held', () => {
+    expect(blindfoldProgress([]).provenStage).toBeNull();
+    expect(blindfoldProgress([stageAttempt('never', true)]).provenStage).toBeNull();
+  });
+
+  it('needs repeated unaided success, not one lucky answer', () => {
+    const once = Array.from({ length: PROVEN_ATTEMPTS - 1 }, () => stageAttempt('start-only', true));
+    expect(blindfoldProgress(once).provenStage).toBeNull();
+
+    const enough = Array.from({ length: PROVEN_ATTEMPTS }, () => stageAttempt('start-only', true));
+    expect(blindfoldProgress(enough).provenStage).toBe('start-only');
+  });
+
+  it('does not count hinted answers towards a stage', () => {
+    const hinted = Array.from({ length: PROVEN_ATTEMPTS * 2 }, () =>
+      stageAttempt('never', true, 1),
+    );
+    expect(blindfoldProgress(hinted).provenStage).toBeNull();
+  });
+
+  it('needs accuracy at the stage, not just volume', () => {
+    const attempts = [
+      ...Array.from({ length: PROVEN_ATTEMPTS }, () => stageAttempt('never', true)),
+      ...Array.from({ length: 20 }, () => stageAttempt('never', false)),
+    ];
+    expect(blindfoldProgress(attempts).provenStage).toBeNull();
+  });
+
+  it('reports the hardest stage held, not the most practiced one', () => {
+    const attempts = [
+      // A great deal of easy practice…
+      ...Array.from({ length: 50 }, () => stageAttempt('each-ply', true)),
+      // …and just enough hard practice.
+      ...Array.from({ length: PROVEN_ATTEMPTS }, () => stageAttempt('never', true)),
+    ];
+    expect(blindfoldProgress(attempts).provenStage).toBe('never');
+  });
+
+  it('holds the lower stage when the harder one is not yet proven', () => {
+    const attempts = [
+      ...Array.from({ length: PROVEN_ATTEMPTS }, () => stageAttempt('every-four', true)),
+      ...Array.from({ length: 2 }, () => stageAttempt('never', true)),
+    ];
+    expect(blindfoldProgress(attempts).provenStage).toBe('every-four');
+  });
+
+  it('ignores an unrecognised stage rather than ranking it', () => {
+    const attempts = Array.from({ length: PROVEN_ATTEMPTS }, () =>
+      stageAttempt('made-up-stage', true),
+    );
+    expect(blindfoldProgress(attempts).provenStage).toBeNull();
+  });
+});

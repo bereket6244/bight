@@ -15,6 +15,7 @@ import userEvent from '@testing-library/user-event';
 import { EngineGameScreen, MIN_THINKING_MS } from './screens/EngineGameScreen';
 import { AppProvider } from './state/AppContext';
 import type { EngineMove, EngineService, EngineStatus } from '../services/engine';
+import { SAVED_GAME_KEY } from '../core/engineGame/savedGame';
 /**
  * Everything spoken, so "read moves aloud" can be asserted without a device.
  *
@@ -166,6 +167,8 @@ describe('playing a game', () => {
     const engine = fakeEngine({ moves: ['e7e5'] });
     await renderGame(engine);
 
+    // The default keeps only the latest move; this test is about the list.
+    await user.click(screen.getByTestId('engine-history-full'));
     await user.click(screen.getByTestId('engine-start'));
     await screen.findByTestId('engine-game');
 
@@ -185,7 +188,9 @@ describe('playing a game', () => {
     await screen.findByTestId('engine-game');
 
     await tapMove(user, 'e2', 'e5');
-    expect(screen.getByTestId('engine-moves').textContent?.trim()).toBe('');
+    // With no moves played there is no list element at all, which is what
+    // keeps a hidden history from leaving a blank strip behind.
+    expect(screen.queryByTestId('engine-moves')).not.toBeInTheDocument();
     expect(screen.getByTestId('engine-turn')).toHaveTextContent('Your move');
   });
 
@@ -333,22 +338,6 @@ describe('failure recovery and background behaviour', () => {
     expect(await screen.findByTestId('engine-setup')).toBeInTheDocument();
   });
 
-  it('stops the search when the app is backgrounded', async () => {
-    const user = userEvent.setup();
-    const engine = fakeEngine();
-    await renderGame(engine);
-
-    await user.click(screen.getByTestId('engine-start'));
-    await screen.findByTestId('engine-game');
-
-    Object.defineProperty(document, 'visibilityState', {
-      configurable: true,
-      get: () => 'hidden',
-    });
-    document.dispatchEvent(new Event('visibilitychange'));
-
-    await waitFor(() => expect(engine.calls).toContain('stop'));
-  });
 });
 
 /* ------------------------------------------------------------------ *
@@ -395,6 +384,7 @@ describe('playing with the board hidden', () => {
     const engine = fakeEngine({ moves: ['e7e5'] });
     await renderGame(engine);
 
+    await user.click(screen.getByTestId('engine-history-full'));
     await user.click(screen.getByTestId('engine-visibility-never'));
     await user.click(screen.getByTestId('engine-start'));
     await screen.findByTestId('engine-game');
@@ -465,7 +455,9 @@ describe('playing with the board hidden', () => {
     await screen.findByTestId('engine-game');
 
     await tapMove(user, 'e2', 'e5');
-    expect(screen.getByTestId('engine-moves').textContent?.trim()).toBe('');
+    // With no moves played there is no list element at all, which is what
+    // keeps a hidden history from leaving a blank strip behind.
+    expect(screen.queryByTestId('engine-moves')).not.toBeInTheDocument();
     expect(screen.getByTestId('engine-turn')).toHaveTextContent('Your move');
 
     // Still playable afterwards.
@@ -703,5 +695,308 @@ describe('making the computer reply perceptible', () => {
     await tapMove(user, 'e2', 'e5');
 
     expect(speechCalls()).toHaveLength(0);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Backgrounding, history, and resuming
+ * ------------------------------------------------------------------ */
+
+/** Fires a visibility change, as Android does when the app is backgrounded. */
+function setVisibility(state: 'hidden' | 'visible'): void {
+  Object.defineProperty(document, 'visibilityState', {
+    configurable: true,
+    get: () => state,
+  });
+  document.dispatchEvent(new Event('visibilitychange'));
+}
+
+describe('backgrounding during the computer turn', () => {
+  it('stops the search rather than leaving it running', async () => {
+    const user = userEvent.setup();
+    const engine = fakeEngine({ moves: ['e7e5'] });
+    await renderGame(engine);
+
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+    await tapMove(user, 'e2', 'e4');
+    await waitFor(() => expect(screen.getByTestId('engine-turn')).toHaveTextContent(/thinking/i));
+
+    setVisibility('hidden');
+    await waitFor(() => expect(engine.calls).toContain('stop'));
+  });
+
+  it('does not strand the game in "Computer thinking" for ever', async () => {
+    const user = userEvent.setup();
+    // Two copies of the same reply: the abandoned turn consumes one from the
+    // script, where real Stockfish would simply answer the unchanged position
+    // again.
+    await renderGame(fakeEngine({ moves: ['e7e5', 'e7e5'] }));
+
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+    await tapMove(user, 'e2', 'e4');
+    await waitFor(() => expect(screen.getByTestId('engine-turn')).toHaveTextContent(/thinking/i));
+
+    setVisibility('hidden');
+    // The old handler stopped the search and left `thinking` true, so the game
+    // came back with nothing running and no way to continue.
+    await waitFor(() =>
+      expect(screen.getByTestId('engine-turn')).not.toHaveTextContent(/thinking/i),
+    );
+
+    setVisibility('visible');
+    await waitFor(
+      () => expect(screen.getByTestId('engine-turn')).toHaveTextContent('Your move'),
+      { timeout: MIN_THINKING_MS * 4 },
+    );
+  });
+
+  it('plays exactly one computer move on return, never two', async () => {
+    const user = userEvent.setup();
+    // As above: the abandoned turn takes one entry from the script.
+    const engine = fakeEngine({ moves: ['e7e5', 'e7e5', 'b8c6'] });
+    await renderGame(engine);
+
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+    await tapMove(user, 'e2', 'e4');
+    await waitFor(() => expect(screen.getByTestId('engine-turn')).toHaveTextContent(/thinking/i));
+
+    setVisibility('hidden');
+    setVisibility('visible');
+
+    await waitFor(
+      () => expect(screen.getByTestId('engine-last-move')).toHaveTextContent('Computer played'),
+      { timeout: MIN_THINKING_MS * 5 },
+    );
+
+    // One reply, not two: Black has moved once and it is White to play.
+    expect(screen.getByTestId('engine-turn')).toHaveTextContent('Your move');
+    expect(screen.getByTestId('engine-last-move')).toHaveTextContent('e5');
+  });
+
+  it('keeps the user move that was already made', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine({ moves: ['e7e5'] }));
+
+    await user.click(screen.getByTestId('engine-history-full'));
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+    await tapMove(user, 'e2', 'e4');
+
+    setVisibility('hidden');
+    setVisibility('visible');
+
+    await waitFor(() => expect(screen.getByTestId('engine-moves')).toHaveTextContent('1. e4'), {
+      timeout: MIN_THINKING_MS * 4,
+    });
+  });
+
+  it('does nothing on return when it is the user to move', async () => {
+    const user = userEvent.setup();
+    const engine = fakeEngine({ moves: ['e7e5'] });
+    await renderGame(engine);
+
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+
+    setVisibility('hidden');
+    setVisibility('visible');
+
+    // The engine was never asked for a move, because it did not owe one.
+    expect(engine.calls.filter((call) => call === 'chooseMove')).toHaveLength(0);
+    expect(screen.getByTestId('engine-turn')).toHaveTextContent('Your move');
+  });
+});
+
+describe('the move-history setting', () => {
+  it('shows only the latest move by default', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine({ moves: ['e7e5'] }));
+
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+    await tapMove(user, 'e2', 'e4');
+
+    await waitFor(
+      () => expect(screen.getByTestId('engine-last-move')).toHaveTextContent('Computer played'),
+      { timeout: MIN_THINKING_MS * 4 },
+    );
+    // The reply is there; the user's own move has scrolled out of the list.
+    const list = screen.getByTestId('engine-moves').textContent ?? '';
+    expect(list).toContain('e5');
+    expect(list).not.toContain('1. e4 ');
+  });
+
+  it('shows the whole score sheet on the full setting', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine({ moves: ['e7e5'] }));
+
+    await user.click(screen.getByTestId('engine-history-full'));
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+    await tapMove(user, 'e2', 'e4');
+
+    await waitFor(() => expect(screen.getByTestId('engine-moves')).toHaveTextContent('1. e4 e5'), {
+      timeout: MIN_THINKING_MS * 4,
+    });
+  });
+
+  it('renders no list at all when the history is hidden, and no blank gap', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine({ moves: ['e7e5'] }));
+
+    await user.click(screen.getByTestId('engine-history-hidden'));
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+    await tapMove(user, 'e2', 'e4');
+
+    await waitFor(
+      () => expect(screen.getByTestId('engine-last-move')).toHaveTextContent('Computer played'),
+      { timeout: MIN_THINKING_MS * 4 },
+    );
+
+    expect(screen.queryByTestId('engine-moves')).not.toBeInTheDocument();
+    // The latest move is still perceivable, which is what keeps the game
+    // playable with the history off.
+    expect(screen.getByTestId('engine-last-move')).toHaveTextContent('e5');
+  });
+
+  it('reveals the history on request, and only on the setting that offers it', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine({ moves: ['e7e5'] }));
+
+    await user.click(screen.getByTestId('engine-history-hidden-reveal'));
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+    await tapMove(user, 'e2', 'e4');
+    await waitFor(
+      () => expect(screen.getByTestId('engine-last-move')).toHaveTextContent('Computer played'),
+      { timeout: MIN_THINKING_MS * 4 },
+    );
+
+    expect(screen.queryByTestId('engine-moves')).not.toBeInTheDocument();
+    await user.click(screen.getByTestId('engine-reveal-history'));
+    expect(screen.getByTestId('engine-moves')).toHaveTextContent('1. e4 e5');
+  });
+
+  it('offers no reveal action on the plain hidden setting', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine());
+
+    await user.click(screen.getByTestId('engine-history-hidden'));
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+
+    expect(screen.queryByTestId('engine-reveal-history')).not.toBeInTheDocument();
+  });
+});
+
+describe('resuming an unfinished game', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it('offers a game left unfinished', async () => {
+    const user = userEvent.setup();
+    const first = await renderGame(fakeEngine({ moves: ['e7e5'] }));
+
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+    await tapMove(user, 'e2', 'e4');
+    await waitFor(
+      () => expect(screen.getByTestId('engine-last-move')).toHaveTextContent('Computer played'),
+      { timeout: MIN_THINKING_MS * 4 },
+    );
+
+    // Leaving used to discard the game silently.
+    first.unmount();
+
+    await renderGame(fakeEngine());
+    expect(await screen.findByTestId('engine-resume')).toBeInTheDocument();
+    expect(screen.getByTestId('engine-resume')).toHaveTextContent(/White, 1 move/i);
+  });
+
+  it('replays the moves back onto the board', async () => {
+    const user = userEvent.setup();
+    const first = await renderGame(fakeEngine({ moves: ['e7e5'] }));
+
+    await user.click(screen.getByTestId('engine-history-full'));
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+    await tapMove(user, 'e2', 'e4');
+    await waitFor(
+      () => expect(screen.getByTestId('engine-last-move')).toHaveTextContent('Computer played'),
+      { timeout: MIN_THINKING_MS * 4 },
+    );
+    first.unmount();
+
+    await renderGame(fakeEngine({ moves: ['b8c6'] }));
+    await user.click(await screen.findByTestId('engine-resume-yes'));
+
+    await screen.findByTestId('engine-game');
+    await waitFor(() => expect(screen.getByTestId('engine-moves')).toHaveTextContent('1. e4 e5'));
+    // And it is playable: the user can carry on.
+    expect(screen.getByTestId('engine-turn')).toHaveTextContent('Your move');
+  });
+
+  it('lets the user decline and start fresh, forgetting the save', async () => {
+    const user = userEvent.setup();
+    const first = await renderGame(fakeEngine({ moves: ['e7e5'] }));
+
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+    await tapMove(user, 'e2', 'e4');
+    await waitFor(
+      () => expect(screen.getByTestId('engine-last-move')).toHaveTextContent('Computer played'),
+      { timeout: MIN_THINKING_MS * 4 },
+    );
+    first.unmount();
+
+    const second = await renderGame(fakeEngine());
+    await user.click(await screen.findByTestId('engine-resume-no'));
+    expect(screen.queryByTestId('engine-resume')).not.toBeInTheDocument();
+    second.unmount();
+
+    // And it is not offered again.
+    await renderGame(fakeEngine());
+    await screen.findByTestId('engine-setup');
+    expect(screen.queryByTestId('engine-resume')).not.toBeInTheDocument();
+  });
+
+  it('offers nothing when there is no saved game', async () => {
+    await renderGame(fakeEngine());
+    await screen.findByTestId('engine-setup');
+    expect(screen.queryByTestId('engine-resume')).not.toBeInTheDocument();
+  });
+
+  it('discards a corrupt save rather than trying to interpret it', async () => {
+    window.localStorage.setItem(SAVED_GAME_KEY, '{"version":1,"moves":["not-a-move"]}');
+
+    await renderGame(fakeEngine());
+    await screen.findByTestId('engine-setup');
+    expect(screen.queryByTestId('engine-resume')).not.toBeInTheDocument();
+    expect(window.localStorage.getItem(SAVED_GAME_KEY)).toBeNull();
+  });
+
+  it('does not offer a finished game', async () => {
+    const user = userEvent.setup();
+    const first = await renderGame(fakeEngine({ moves: ['e7e5'] }));
+
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+    await tapMove(user, 'e2', 'e4');
+    await waitFor(
+      () => expect(screen.getByTestId('engine-last-move')).toHaveTextContent('Computer played'),
+      { timeout: MIN_THINKING_MS * 4 },
+    );
+    await user.click(screen.getByTestId('engine-resign'));
+    await screen.findByTestId('engine-result');
+    first.unmount();
+
+    await renderGame(fakeEngine());
+    await screen.findByTestId('engine-setup');
+    expect(screen.queryByTestId('engine-resume')).not.toBeInTheDocument();
   });
 });

@@ -73,6 +73,17 @@ export interface BlindfoldProgress {
    * "the longest they ever got right once".
    */
   provenPlies: number | null;
+  /**
+   * The hardest board-visibility stage the user has actually held, or null
+   * before they have held any.
+   *
+   * "Held" means the same standard as `provenPlies`: repeated **unaided**
+   * success, not one lucky answer. This is what the progressive ladder starts
+   * from in a new session, so the stage survives closing the app — it is
+   * derived from stored attempts rather than saved separately, so old data and
+   * old backups produce a correct answer with no migration.
+   */
+  provenStage: string | null;
   /** Distinct sessions and distinct local days with blindfold practice. */
   sessions: number;
   days: number;
@@ -354,12 +365,29 @@ export function blindfoldProgress(
   }
 
   const lengths = harvest<number>(byLength);
+  const visibilities = harvest<string>(byVisibility);
 
   let provenPlies: number | null = null;
   for (const [plies, tally] of lengths) {
     if (tally.unaidedCorrect < PROVEN_ATTEMPTS) continue;
     if (tally.unaidedAccuracy < PROVEN_ACCURACY) continue;
     if (provenPlies === null || plies > provenPlies) provenPlies = plies;
+  }
+
+  /*
+   * The hardest stage held to the same standard as provenPlies. Ordered by
+   * the ladder rather than by how much practice each stage has had, so a lot
+   * of easy practice never outranks a little hard practice.
+   */
+  let provenStage: string | null = null;
+  for (const [visibility, tally] of visibilities) {
+    if (tally.unaidedCorrect < PROVEN_ATTEMPTS) continue;
+    if (tally.unaidedAccuracy < PROVEN_ACCURACY) continue;
+    const rank = VISIBILITY_LADDER.indexOf(visibility);
+    if (rank === -1) continue;
+    if (provenStage === null || rank > VISIBILITY_LADDER.indexOf(provenStage)) {
+      provenStage = visibility;
+    }
   }
 
   const recent = [...blindfold]
@@ -370,10 +398,11 @@ export function blindfoldProgress(
     overall: overall.has('all') ? finish(overall.get('all') as Accumulator) : emptyTally(),
     byMode: harvest<string>(byMode),
     byLength: lengths,
-    byVisibility: harvest<string>(byVisibility),
+    byVisibility: visibilities,
     byKind: harvest<string>(byKind),
     byOrientation: harvest<string>(byOrientation),
     provenPlies,
+    provenStage,
     sessions: blindfold.length === 0 ? 0 : sessions.size,
     days: blindfold.length === 0 ? 0 : days.size,
     recentAccuracy:
