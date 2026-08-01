@@ -15,7 +15,7 @@ import { ALL_SQUARES, isSquareName, squareColor } from '../chess/square';
 import type { SquareName } from '../chess/types';
 import { createRng } from '../rng';
 import { gradeQuestion } from './grade';
-import { allModeVariants, MODES } from './registry';
+import { questionModeVariants, MODES } from './registry';
 import { emptyFilters, type GeneratorContext, type Question, type SubmittedAnswer } from './types';
 
 function context(overrides: Partial<GeneratorContext> = {}): GeneratorContext {
@@ -48,6 +48,8 @@ function perfectAnswer(question: Question): SubmittedAnswer {
       return { kind: 'square-path', squares: expected.exampleRoute.slice(1) };
     case 'piece-journey':
       return { kind: 'piece-journey', path: expected.exampleRoute.slice(1) };
+    case 'placement':
+      return { kind: 'placement', placed: [...expected.required] };
   }
 }
 
@@ -70,7 +72,7 @@ describe('generator contract', () => {
   });
 
   it('produces a well-formed question for every mode, variant and seed', () => {
-    for (const { mode, variant } of allModeVariants()) {
+    for (const { mode, variant } of questionModeVariants()) {
       for (const seed of CONTRACT_SEEDS) {
         const rng = createRng(seed);
         const question = mode.generate(context(), rng, variant.id);
@@ -93,7 +95,7 @@ describe('generator contract', () => {
   });
 
   it('never generates an off-board or duplicated answer square', () => {
-    for (const { mode, variant } of allModeVariants()) {
+    for (const { mode, variant } of questionModeVariants()) {
       for (const seed of CONTRACT_SEEDS) {
         const question = mode.generate(context(), createRng(seed), variant.id);
         const where = `${mode.id}/${variant.id}/seed ${seed}`;
@@ -120,7 +122,7 @@ describe('generator contract', () => {
   });
 
   it('always produces at least one correct answer where one is required', () => {
-    for (const { mode, variant } of allModeVariants()) {
+    for (const { mode, variant } of questionModeVariants()) {
       for (const seed of CONTRACT_SEEDS) {
         const question = mode.generate(context(), createRng(seed), variant.id);
         const where = `${mode.id}/${variant.id}/seed ${seed}`;
@@ -145,7 +147,7 @@ describe('generator contract', () => {
   });
 
   it('grades its own perfect answer as correct', () => {
-    for (const { mode, variant } of allModeVariants()) {
+    for (const { mode, variant } of questionModeVariants()) {
       for (const seed of CONTRACT_SEEDS) {
         const question = mode.generate(context(), createRng(seed), variant.id);
         const grade = gradeQuestion(question, perfectAnswer(question));
@@ -159,7 +161,7 @@ describe('generator contract', () => {
   });
 
   it('is reproducible from a seed', () => {
-    for (const { mode, variant } of allModeVariants()) {
+    for (const { mode, variant } of questionModeVariants()) {
       const a = mode.generate(context(), createRng(777), variant.id);
       const b = mode.generate(context(), createRng(777), variant.id);
       expect(b.expected, `${mode.id}/${variant.id}`).toEqual(a.expected);
@@ -321,7 +323,7 @@ describe('filters restrict the squares questions are drawn from', () => {
 
 describe('board settings flow into the generated board', () => {
   it('applies orientation and label settings', () => {
-    for (const { mode, variant } of allModeVariants()) {
+    for (const { mode, variant } of questionModeVariants()) {
       const question = mode.generate(
         context({ orientation: 'black', labels: 'never' }),
         createRng(5),
@@ -381,7 +383,7 @@ describe('adaptive weighting', () => {
 
 describe('answer sets are stable and sorted', () => {
   it('returns square sets in sorted order', () => {
-    for (const { mode, variant } of allModeVariants()) {
+    for (const { mode, variant } of questionModeVariants()) {
       for (const seed of SEEDS.slice(0, 4)) {
         const question = mode.generate(context(), createRng(seed), variant.id);
         if (question.expected.kind !== 'square-set') continue;

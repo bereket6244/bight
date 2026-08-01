@@ -8,7 +8,7 @@
  *
  * versionCode is derived as major*10000 + minor*100 + patch.
  */
-export const APP_VERSION = '1.3.0';
+export const APP_VERSION = '2.1.0';
 
 /** Android versionCode, derived from APP_VERSION so the two cannot drift. */
 export function androidVersionCode(version: string = APP_VERSION): number {

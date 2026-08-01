@@ -24,6 +24,12 @@ import { knightRouteMode, knightVisionMode } from './generators/knight';
 import { knightForkMode, queenForkMode } from './generators/fork';
 import { notationMode } from './generators/notation';
 import { alignmentMode, blockerMode, pieceVisionMode } from './generators/pieces';
+import {
+  blindfoldEngineGameMode,
+  blindfoldProgressiveMode,
+  blindfoldReconstructionMode,
+  blindfoldTrackingMode,
+} from './generators/blindfold';
 import { legacyModeLabel, legacyVariantLabel } from './legacy';
 
 export const MODES: readonly ModeDefinition[] = Object.freeze([
@@ -38,6 +44,10 @@ export const MODES: readonly ModeDefinition[] = Object.freeze([
   notationMode,
   pieceVisionMode,
   blockerMode,
+  blindfoldTrackingMode,
+  blindfoldReconstructionMode,
+  blindfoldProgressiveMode,
+  blindfoldEngineGameMode,
 ]);
 
 const MODE_BY_ID = new Map<ModeId, ModeDefinition>(MODES.map((mode) => [mode.id, mode]));
@@ -70,6 +80,19 @@ export function allModeVariants(): Array<{ mode: ModeDefinition; variant: ModeVa
   return MODES.flatMap((mode) => mode.variants.map((variant) => ({ mode, variant })));
 }
 
+/**
+ * Every mode that produces questions, which is every mode except the engine
+ * game.
+ *
+ * The generator contract, the session screen and the "open every mode" sweeps
+ * all mean this set rather than `allModeVariants()`. A game against the engine
+ * has no generator and no expected answer, so asking it to satisfy a question
+ * contract would be asking the wrong question.
+ */
+export function questionModeVariants(): Array<{ mode: ModeDefinition; variant: ModeVariant }> {
+  return allModeVariants().filter(({ mode }) => mode.isEngineGame !== true);
+}
+
 /** Modes grouped for the browser, in a stable display order. */
 export const CATEGORY_ORDER: readonly ModeCategory[] = Object.freeze([
   'coordinates',
@@ -78,6 +101,7 @@ export const CATEGORY_ORDER: readonly ModeCategory[] = Object.freeze([
   'forks',
   'notation',
   'position',
+  'blindfold',
 ]);
 
 export function modesByCategory(): Array<{ category: ModeCategory; label: string; modes: ModeDefinition[] }> {

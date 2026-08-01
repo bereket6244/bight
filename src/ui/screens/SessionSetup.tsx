@@ -10,11 +10,17 @@
  * bare icon.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FILE_LETTERS } from '../../core/chess/types';
 import { QUADRANT_LABELS, QUADRANTS } from '../../core/chess/square';
 import { validateSettings, type SessionSettings } from '../../core/session/settings';
 import type { ModeDefinition } from '../../core/training/types';
+import {
+  BLINDFOLD_PRESETS,
+  DIFFICULTY_ORDER,
+} from '../../core/training/generators/blindfold';
+import { blindfoldProgress } from '../../core/progress/blindfold';
+import { useApp } from '../state/AppContext';
 import { useVoiceCapability } from '../../services/voice/useVoice';
 import { isVoiceUsable, voiceBadgeText } from '../../services/voice/state';
 
@@ -23,6 +29,24 @@ export interface SessionSetupProps {
   initial: SessionSettings;
   onStart: (settings: SessionSettings) => void;
   onBack: () => void;
+}
+
+/**
+ * Where a visibility stage sits on the ladder, hardest last. Used only to
+ * decide whether a restored stage is harder than the current one.
+ */
+const STAGE_ORDER: readonly string[] = [
+  'always',
+  'each-ply',
+  'each-move',
+  'every-four',
+  'checkpoint-flash',
+  'start-only',
+  'never',
+];
+
+function stageRank(stage: string): number {
+  return STAGE_ORDER.indexOf(stage);
 }
 
 /** A labelled segmented control. Selection is shown by fill, not colour alone. */
@@ -67,12 +91,56 @@ function Segmented<T extends string | number>({
 
 export function SessionSetup({ mode, initial, onStart, onBack }: SessionSetupProps) {
   const [settings, setSettings] = useState<SessionSettings>(initial);
+  /** The hardest stage the user has held, restored into the ladder below. */
+  const [provenStage, setProvenStage] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
+  const app = useApp();
   const voice = useVoiceCapability();
 
   const patch = (changes: Partial<SessionSettings>): void =>
     setSettings((current) => ({ ...current, ...changes }));
+
+  /*
+   * The progressive ladder used to start from scratch every session, so a
+   * stage the user had genuinely reached had to be re-earned each time.
+   *
+   * The stage is derived from stored attempts rather than saved separately:
+   * the same "repeated unaided success" standard as the rest of the progress
+   * model, which means old data and old backups give a correct answer with no
+   * migration. Adaptive off, or a manual change below, still wins — this only
+   * sets the starting point.
+   */
+  useEffect(() => {
+    if (mode.supportsBlindfold !== true || !settings.adaptive) return;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const attempts = await app.repository.getAttempts({ limit: 3000 });
+        if (cancelled) return;
+        const stage = blindfoldProgress(attempts).provenStage;
+        if (stage === null) return;
+        setProvenStage(stage);
+        setSettings((current) =>
+          // Only raise the starting point, never lower what the user chose.
+          stageRank(stage) > stageRank(current.boardVisibility)
+            ? { ...current, boardVisibility: stage as SessionSettings['boardVisibility'] }
+            : current,
+        );
+      } catch {
+        // Progress is a convenience here; failing to read it must not stop a
+        // session from being set up.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // Runs once per mode: re-running on every settings change would fight the
+    // user's own choices.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [app.repository, mode.id]);
 
   const toggleIn = (list: number[], value: number): number[] =>
     list.includes(value) ? list.filter((v) => v !== value) : [...list, value].sort((a, b) => a - b);
@@ -145,6 +213,134 @@ export function SessionSetup({ mode, initial, onStart, onBack }: SessionSetupPro
             ]}
             onChange={(labels) => patch({ labels })}
             testId="setup-labels"
+          />
+        </>
+      ) : null}
+
+      {/* Blindfold settings. These are the variants the information
+          architecture keeps out of the mode browser: difficulty, how much of
+          the board you get, and how the moves arrive. */}
+      {mode.supportsBlindfold === true ? (
+        <>
+          {/* The preset writes into the ordinary settings below, which stay
+              editable: it is a starting point, not a separate mode. */}
+          <Segmented
+            label="Difficulty"
+            value={settings.blindfoldDifficulty}
+            options={DIFFICULTY_ORDER.map((id) => ({
+              value: id,
+              label: BLINDFOLD_PRESETS[id].label,
+            }))}
+            onChange={(blindfoldDifficulty) => {
+              const preset = BLINDFOLD_PRESETS[blindfoldDifficulty];
+              patch({
+                blindfoldDifficulty,
+                blindfoldPlies: preset.plies,
+                boardVisibility: preset.boardVisibility,
+                moveHistory: preset.moveHistory,
+                captureBias: preset.captureBias,
+                // Reconstruction depth is part of the level, but only for the
+                // mode it belongs to — a preset must not retarget the drill.
+                variantId:
+                  mode.id === 'blindfold-reconstruction' ? preset.reconstruction : settings.variantId,
+              });
+            }}
+            testId="setup-blindfold-difficulty"
+          />
+
+          <p className="card__subtitle" data-testid="blindfold-preset-detail">
+            {BLINDFOLD_PRESETS[settings.blindfoldDifficulty].detail}
+          </p>
+
+          {/* Explaining the restored stage rather than silently moving the
+              control: an unexplained change to a setting the user chose is
+              indistinguishable from a bug. */}
+          {provenStage !== null ? (
+            <p className="card__subtitle" data-testid="blindfold-stage-restored">
+              Board setting restored to the hardest stage you have held without
+              hints. Change it below to override.
+            </p>
+          ) : null}
+
+          <Segmented
+            label="Sequence length"
+            value={settings.blindfoldPlies}
+            options={[4, 8, 12, 18, 24].map((plies) => ({ value: plies, label: `${plies}` }))}
+            onChange={(blindfoldPlies) => patch({ blindfoldPlies })}
+            testId="setup-blindfold-plies"
+          />
+
+          <Segmented
+            label="Board"
+            value={settings.boardVisibility}
+            options={[
+              { value: 'each-ply', label: 'Every move' },
+              { value: 'every-four', label: 'Every 4' },
+              { value: 'checkpoint-flash', label: 'Flash' },
+              { value: 'start-only', label: 'Start only' },
+              { value: 'never', label: 'None' },
+            ]}
+            onChange={(boardVisibility) => patch({ boardVisibility })}
+            testId="setup-board-visibility"
+          />
+
+          <Segmented
+            label="Move list"
+            value={settings.moveHistory}
+            options={[
+              { value: 'visible', label: 'Stays up' },
+              { value: 'latest-only', label: 'Last move' },
+              { value: 'hidden', label: 'Hidden' },
+            ]}
+            onChange={(moveHistory) => patch({ moveHistory })}
+            testId="setup-move-history"
+          />
+
+          <Segmented
+            label="Pace"
+            value={settings.pacing}
+            options={[
+              { value: 'manual', label: 'Tap' },
+              { value: 'slow', label: 'Slow' },
+              { value: 'medium', label: 'Medium' },
+              { value: 'fast', label: 'Fast' },
+            ]}
+            onChange={(pacing) => patch({ pacing })}
+            testId="setup-pacing"
+          />
+
+          <Segmented
+            label="Captures"
+            value={settings.captureBias}
+            options={[
+              { value: 'ordinary', label: 'Ordinary' },
+              { value: 'capture-focused', label: 'More' },
+              { value: 'heavy-exchanges', label: 'Heavy' },
+            ]}
+            onChange={(captureBias) => patch({ captureBias })}
+            testId="setup-capture-bias"
+          />
+
+          <Segmented
+            label="Hints"
+            value={settings.allowHints ? 'on' : 'off'}
+            options={[
+              { value: 'on', label: 'Allowed' },
+              { value: 'off', label: 'Off' },
+            ]}
+            onChange={(choice) => patch({ allowHints: choice === 'on' })}
+            testId="setup-allow-hints"
+          />
+
+          <Segmented
+            label="Read moves aloud"
+            value={settings.speakMoves ? 'on' : 'off'}
+            options={[
+              { value: 'off', label: 'Off' },
+              { value: 'on', label: 'On' },
+            ]}
+            onChange={(choice) => patch({ speakMoves: choice === 'on' })}
+            testId="setup-speak-moves"
           />
         </>
       ) : null}

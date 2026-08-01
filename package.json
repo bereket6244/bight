@@ -1,13 +1,13 @@
 {
   "name": "bight",
-  "version": "1.3.0",
+  "version": "2.1.0",
   "description": "Bight - board sight. An offline chess coordinate and board-vision trainer.",
   "private": true,
   "type": "module",
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "node scripts/prepare-engine.mjs && tsc --noEmit && vite build",
     "preview": "vite preview",
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc --noEmit",
@@ -18,12 +18,19 @@
     "android:build": "node scripts/sync-version.mjs && node scripts/build-apk.mjs",
     "android:release": "node scripts/build-apk.mjs --release",
     "fetch:voice-model": "node scripts/fetch-voice-model.mjs",
-    "verify": "node scripts/sync-version.mjs --check && node scripts/generate-icons.mjs --check && npm run lint && npm run typecheck && npm run test",
+    "verify": "node scripts/prepare-engine.mjs --check && node scripts/sync-version.mjs --check && node scripts/generate-icons.mjs --check && npm run lint && npm run typecheck && npm run test",
     "setup": "node scripts/setup.mjs",
     "sync:version": "node scripts/sync-version.mjs",
     "icons": "node scripts/generate-icons.mjs",
     "inspect:apk": "node scripts/inspect-apk.mjs",
-    "test:browser": "node scripts/browser-tests.mjs"
+    "test:browser": "node scripts/browser-tests.mjs",
+    "prepare:engine": "node scripts/prepare-engine.mjs",
+    "test:engine": "node scripts/engine-smoke.mjs && node scripts/engine-game-check.mjs && node scripts/engine-difficulty-check.mjs",
+    "test:blindfold": "node scripts/blindfold-walkthrough.mjs",
+    "release:android": "node scripts/release-android.mjs",
+    "verify:licenses": "node scripts/verify-licenses.mjs",
+    "test:layout": "node scripts/blindfold-layout-check.mjs",
+    "verify:release": "node scripts/verify-release-state.mjs"
   },
   "dependencies": {
     "@capacitor-community/sqlite": "^6.0.2",
@@ -38,6 +45,7 @@
     "chess.js": "^1.0.0-beta.8",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "stockfish": "18.0.8",
     "vosk-browser": "^0.0.8"
   },
   "devDependencies": {

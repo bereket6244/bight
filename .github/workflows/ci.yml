@@ -32,11 +32,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Prepare the engine assets
+        run: npm run prepare:engine
+
       - name: Check version synchronization
         run: node scripts/sync-version.mjs --check
 
       - name: Check generated icon resources are current
         run: node scripts/generate-icons.mjs --check
+
+      - name: Licence compliance
+        run: npm run verify:licenses
+
+      - name: Release state
+        run: npm run verify:release
+        # The APK is not built on this runner, so a missing binary here is
+        # expected; the naming, duplication and documentation checks still run.
+        continue-on-error: true
 
       - name: Lint
         run: npm run lint
@@ -81,8 +93,23 @@ jobs:
           sudo apt-get install -y libnss3 libatk-bridge2.0-0 libgtk-3-0 libasound2t64 || \
           sudo apt-get install -y libnss3 libatk-bridge2.0-0 libgtk-3-0 libasound2
 
+      - name: Prepare the engine assets
+        run: npm run prepare:engine
+
       - name: Layout tests
         run: npm run test:browser
+
+      # The engine is 7 MB of WebAssembly loaded from a local path with no
+      # network fallback, so "does it actually boot and play" is a question
+      # only a real browser can answer.
+      - name: Engine and blindfold walkthroughs
+        run: |
+          npm run build
+          node scripts/engine-smoke.mjs --dist
+          node scripts/engine-game-check.mjs
+          npm run test:blindfold
+          node scripts/blindfold-layout-check.mjs
+          node scripts/engine-difficulty-check.mjs
 
   android:
     name: Android APK (best effort)
@@ -113,6 +140,9 @@ jobs:
       - name: Fetch the offline voice model
         run: npm run fetch:voice-model
         continue-on-error: true
+
+      - name: Prepare the engine assets
+        run: npm run prepare:engine
 
       - name: Build web bundle
         run: npx vite build

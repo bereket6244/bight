@@ -13,7 +13,7 @@ import userEvent from '@testing-library/user-event';
 import { App } from './App';
 import { AppProvider } from './state/AppContext';
 import { SessionScreen } from './screens/SessionScreen';
-import { allModeVariants } from '../core/training/registry';
+import { questionModeVariants } from '../core/training/registry';
 import { defaultSettings } from '../core/session/settings';
 import type { SessionSettings } from '../core/session/settings';
 
@@ -101,7 +101,7 @@ describe('every mode opens and asks a real question', () => {
    * every registered variant through the real session screen and assert it
    * renders a prompt and an answer surface.
    */
-  it.each(allModeVariants().map(({ mode, variant }) => [`${mode.id}/${variant.id}`, mode.id, variant.id]))(
+  it.each(questionModeVariants().map(({ mode, variant }) => [`${mode.id}/${variant.id}`, mode.id, variant.id]))(
     'opens %s',
     async (_label, modeId, variantId) => {
       renderSession({
@@ -132,7 +132,7 @@ describe('no manual progression controls exist anywhere', () => {
    * Next, Continue or Submit control, and no blocking result panel may appear
    * between questions.
    */
-  it.each(allModeVariants().map(({ mode, variant }) => [`${mode.id}/${variant.id}`, mode.id, variant.id]))(
+  it.each(questionModeVariants().map(({ mode, variant }) => [`${mode.id}/${variant.id}`, mode.id, variant.id]))(
     'has no Next/Submit/feedback in %s',
     async (_label, modeId, variantId) => {
       renderSession({
@@ -527,7 +527,22 @@ describe('board settings reach the board', () => {
     // Blindfold practice is a setting now, not a separate mode card.
     renderSession({ modeId: 'square-to-coordinate', variantId: 'standard', hideBoard: true });
     await screen.findByTestId('session-screen');
+
+    // The board is removed rather than blanked, so it reserves no space, and
+    // one line explains its absence. The keypad is still how this mode is
+    // answered, so nothing about the interaction changes.
+    expect(screen.queryByTestId('board')).not.toBeInTheDocument();
     expect(screen.getByText(/answer from memory/i)).toBeInTheDocument();
+    expect(screen.getByTestId('keypad')).toBeInTheDocument();
+  });
+
+  it('leaves no board-sized gap behind a hidden board', async () => {
+    renderSession({ modeId: 'square-to-coordinate', variantId: 'standard', hideBoard: true });
+    await screen.findByTestId('session-screen');
+
+    // Nothing is left in the tree that could reserve the board's 1:1 space.
+    expect(document.querySelectorAll('.board-wrap')).toHaveLength(0);
+    expect(document.querySelectorAll('.square')).toHaveLength(0);
   });
 });
 

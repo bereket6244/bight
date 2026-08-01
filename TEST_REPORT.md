@@ -2,6 +2,214 @@
 
 ---
 
+# Engine pass test report (Phase B, this branch only)
+
+## Commands
+
+```bash
+npx tsc --noEmit && npx eslint src scripts --ext .ts,.tsx,.mjs
+```
+**Pass** — 0 type errors, 0 lint errors.
+
+```bash
+npx vitest run
+```
+**Pass** — **875 tests in 32 files**, up from 800 in 29.
+
+```bash
+node scripts/engine-smoke.mjs           # dev server
+node scripts/engine-smoke.mjs --dist    # production build
+```
+**Pass** — 8 checks each. Boots in 229 ms (dev) and 205 ms (production),
+identifies itself as `Stockfish 18 Lite WASM`, finds mate in one from
+`6k1/5ppp/8/8/8/8/5PPP/R5K1 w`, still answers at Skill Level 0, and the wasm is
+served as `application/wasm`.
+
+```bash
+node scripts/engine-game-check.mjs
+```
+**Pass** — a real game against the real engine in real Chromium, against the
+production build. One run's moves: `1. e4 d5 2. Nf3 e6 3. Bc4 dxc4`, with the
+capture correctly reported as "took a bishop".
+
+```bash
+node scripts/inspect-apk.mjs
+```
+**Pass** — `Engine: 4 files, wasm present`. APK 59.89 MB, up from 54.31 MB.
+
+## New tests
+
+| File | Tests | Covers |
+| --- | --- | --- |
+| `services/engine/engine.test.ts` | 35 | UCI parsing against garbage and truncation, timeouts, worker crashes, stale replies dropped, dispose, and the handshake race below |
+| `core/engineGame/game.test.ts` | 26 | chess.js as the only authority: illegal engine moves refused, malformed output refused, promotion, every way a game ends |
+| `ui/EngineGame.integration.test.tsx` | 14 | the screen with an injected engine that fails to start, returns an illegal move, or stops answering |
+
+The unit tests drive a scripted fake Worker. The failure modes that matter —
+a search that never answers, a worker that dies, a reply arriving after its
+request was abandoned — are close to impossible to trigger reliably with the
+real engine and trivial to trigger with a fake. Whether the real engine works
+is a separate question, answered by the two scripts above.
+
+## Two bugs found by playing for real
+
+Both were invisible to the unit tests and to the smoke test, and both appeared
+the first time a whole game was played through the actual screen:
+
+1. **The game ended on the user's first move.** The board went live before the
+   engine had finished booting, so a move played during the handshake issued a
+   search that collided with it — `the engine is already waiting for a reply`.
+   Fixed twice over: the handshake now goes through the same serialising queue
+   as every other exchange, so a racing caller queues instead of colliding; and
+   the screen refuses input, showing "Starting the engine…", until the engine
+   is ready. Both are covered by regression tests.
+2. **An engine turn was started inside a `setState` updater.** React may replay
+   an updater when a render is interrupted, so the side effect could run twice.
+   Moved out of the updater.
+
+The first was diagnosed by tracing the real call sequence in the browser rather
+than by reasoning about it. Two earlier guesses at the cause were both wrong,
+and both were disproved by a test before being acted on.
+
+## Not verified
+
+- **No emulator or device run.** The engine has not been exercised on Android
+  hardware. Whether 7 MB of WebAssembly loads acceptably in a real Android
+  WebView is **unmeasured**.
+- **Playing strength is uncalibrated.** The four difficulty labels describe how
+  each level plays; no Elo is claimed, because none was measured.
+
+---
+
+# Blindfold pass test report (1.4.0)
+
+## Baseline before any change
+
+`feature/blindfold-stockfish-handoff` from `main` @ `5838304`, version 1.3.0.
+Lint clean, typecheck clean, **680 tests passing**.
+
+## Final commands
+
+```bash
+npx tsc --noEmit
+```
+**Pass** — 0 type errors.
+
+```bash
+npx eslint src --ext .ts,.tsx
+```
+**Pass** — 0 lint errors.
+
+```bash
+npx vitest run
+```
+**Pass** — **800 tests in 29 files**, up from 680 in 22.
+
+One caveat, recorded because it happened: one run of the suite reported a
+single failure. That run took 482s against a normal ~50s, because it was
+started while the Chromium walkthrough below was still shutting down. Three
+consecutive runs since have been 800/800. The identity of the failing test was
+not captured before the output scrolled; on the timing evidence it was almost
+certainly a `waitFor` timeout in the jsdom integration tests under a tenfold
+slowdown rather than a logic failure. It is named here rather than omitted.
+
+```bash
+node scripts/browser-tests.mjs
+```
+**Pass** — **48 real-browser layout checks**, up from 24, across 360x640,
+412x915, 480x1080 and 915x412. The twelve new checks per viewport cover the
+blindfold setup page (seven extra segmented controls, no squeezed segments, no
+horizontal overflow, Start still reachable) and the reconstruction palette
+(twelve buttons, every one meeting the 44px touch target, no horizontal
+scrolling).
+
+```bash
+node scripts/blindfold-walkthrough.mjs
+```
+**Pass** — **15 flows completed, 0 failures** in real Chromium.
+
+```bash
+node scripts/build-apk.mjs && node scripts/inspect-apk.mjs
+```
+**Pass** — `BUILD SUCCESSFUL`, APK contents verified.
+
+## What the new tests cover
+
+| File | Tests | What it holds to account |
+| --- | --- | --- |
+| `core/chess/sequence.test.ts` | 28 | Every generated sequence replayed through a fresh chess.js: legality, SAN/UCI agreement, position after each ply, final FEN, side to move, capture bookkeeping, en passant victims, castling rook identity, promotion as a type change, seed reproduction, and that every offered length/capture-bias pairing generates. |
+| `core/training/generators/blindfold.test.ts` | 35 | Answers re-derived from an independent replay, never from the generator's own bookkeeping. Answer balance for occupancy and was-captured, the full question mix, reconstruction subsets, the correction variant's damage, the progressive ladder, and the four presets. |
+| `core/session/blindfold.test.ts` | 15 | Placing, rejecting, re-placing, repairing a damaged position, and hint accounting through the real reconstruction generator. |
+| `core/session/blindfoldRetry.test.ts` | 12 | Sessions finish, retries drain, nothing loops forever, and a 120-question run stays varied: no repeated sequence, four or more question kinds, broad board coverage. |
+| `core/progress/blindfold.test.ts` | 27 | The separation from square mastery, hint-free accuracy, proven sequence length, and every recommendation branch. |
+| `core/backup/blindfoldBackup.test.ts` | 10 | Round trips with blindfold fields intact, and 1.3.0 backups importing unchanged. |
+| `core/training/grade.test.ts` | 3 | Placement descriptions are unambiguous. |
+| `ui/Blindfold.integration.test.tsx` | 15 | The sequence player, the reveal schedule, the palette, and the absence of any Submit button. |
+
+## Manual review in real Chromium
+
+`scripts/blindfold-walkthrough.mjs` drives a real browser through every flow
+the brief lists. It is not a description of a review — each flow is actually
+completed: sequences are played out tap by tap, answers are given, wrong
+answers are given on purpose, hints are taken. Answers come from the
+development diagnostics panel (`?debug=1`), which is how a reviewer would
+answer a blindfold question they had not personally memorised, and which does
+not exist in a production build.
+
+Evidence from the run of 2026-07-31 (sequences differ per run; these are one
+run's actual values):
+
+| Flow | Evidence |
+| --- | --- |
+| Beginner tracking | 4 plies (`g3 Nh6 g4 Nxg4`), 4 taps to play out, asked `what-was-captured`, answered "White pawn", questionsCompleted 0 → 1 |
+| Intermediate tracking | 10 plies, board `start-only`, history `latest-only`, board confirmed hidden while answering |
+| Capture-focused tracking | heavy exchanges, `g3 h5 g4 hxg4`, asked "What did hxg4 capture?" |
+| Piece-location question | "Where is White's knight that started on g1?" → `h3` |
+| Occupancy question | "Is there a piece on d1?" → "Yes" |
+| Captured-piece question | "Is White's rook that started on a1 still on the board?" → "Still on the board" |
+| Partial reconstruction | "Place both kings" — 2 pieces placed by tapping piece then square, auto-completed, no Submit |
+| Full reconstruction | "Rebuild the whole position" — 32 pieces rebuilt, auto-completed |
+| Progressively hidden sequence | Stage 1 drew the board on 4/4 plies, then hid it once the sequence ended |
+| Wrong-answer flow | answered `a1` instead of `b5`: question kept, red flash shown, **answer not revealed**, no result screen |
+| Hint flow | hint returned the move list; `hintsUsed` 0 → 1; the answer itself never shown |
+| Retry flow | after one miss the retry queue held 1 question |
+| Session summary | Accuracy 100%, 4/4 correct, median 377ms, best streak 4 |
+| Progress blindfold section | Accuracy, hint-free accuracy and sequence-held tiles, a recommendation, and the stated separation from board mastery |
+| Backup export/import | 12388 bytes exported and re-imported, 8 blindfold attempts before and after, `plies`/`boardVisibility`/`blindfoldKind`/`hintsUsed` all intact |
+
+## Three bugs the walkthrough found
+
+Running the review rather than describing it earned its keep:
+
+1. **Beginner + heavy exchanges could not generate a session at all.** A
+   four-ply sequence was required to contain two captures, which four plies
+   from the opening almost never allows, so `requireSequence` exhausted its 40
+   attempts, the generator threw, and the session never started. Both settings
+   are offered together on the setup page. The capture minimum now scales with
+   length, and an unmeetable capture preference degrades to the
+   capture-heaviest sequence found rather than failing — the bias is a
+   preference, not a guarantee. Covered by a test over every offered pairing.
+2. **A described placement was ambiguous.** `describeExpected` rendered each
+   piece as the first letter of its name, so a knight and a king were both `k`.
+   It now uses standard chess letters. This only ever surfaced in diagnostics
+   and the review screen, but it made a placement answer unreadable.
+3. Two apparent failures that turned out to be the app behaving correctly and
+   the script behaving badly, recorded because they are easy to mistake for
+   bugs: re-tapping an armed palette piece disarms it, so a script that
+   re-selected the piece before every square lost every second pawn (24 of 32
+   placed); and input is ignored for 180ms after a question is replaced, so a
+   script tapping faster than any human had its first answer swallowed.
+
+## Not verified
+
+- **No emulator or device run.** The APK builds, installs-checks clean under
+  `inspect-apk`, and every layout claim above comes from real Chromium at
+  phone viewports — but nothing in this pass was run on Android hardware or an
+  emulator, so no hardware behaviour is claimed.
+- **Voice** was not exercised in this pass; blindfold modes do not enable it.
+
+---
+
 # Third pass test report
 
 ## Baseline before any change

@@ -29,6 +29,7 @@ import { ALL_SQUARES } from '../chess/square';
 import type { SquareName } from '../chess/types';
 import { localDateKey, type StoredAttempt } from '../storage/types';
 import { MAX_WEIGHT } from '../training/pool';
+import { excludeBlindfold } from './blindfold';
 
 /**
  * Exposures before confidence reaches its maximum.
@@ -272,8 +273,18 @@ export function computeMastery(
     }
   };
 
+  /*
+   * Blindfold attempts are excluded outright, not down-weighted.
+   *
+   * "Where is the knight that started on g1" has a square for an answer, but
+   * getting it wrong means the user lost track of a piece, not that they do
+   * not know where e5 is. Crediting it to e5 would make squares the user knows
+   * perfectly well look weak, and adaptive practice would then drill them on
+   * the wrong thing. Blindfold results are measured in `progress/blindfold.ts`
+   * on their own terms.
+   */
   // Oldest first so the weighted accuracy walks forward in time.
-  const ordered = [...attempts].sort((a, b) => a.timestamp - b.timestamp);
+  const ordered = excludeBlindfold(attempts).sort((a, b) => a.timestamp - b.timestamp);
 
   for (const attempt of ordered) {
     const origin = attempt.originSquare ?? null;

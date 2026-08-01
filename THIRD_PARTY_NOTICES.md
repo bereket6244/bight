@@ -1,7 +1,22 @@
 # Third-party notices
 
-Bight is MIT licensed. This file records every third-party component it
-depends on or redistributes, and the licence each is used under.
+This file records every third-party component Bight depends on or
+redistributes, and the licence each is used under.
+
+## Licensing on this branch
+
+**This branch bundles Stockfish, which is GPLv3, so the application
+distributed from it is offered as a whole under GPLv3.** Bight's own code
+remains available under MIT as well — see `LICENSE-MIT`. `main` ships no
+engine and is MIT.
+
+No permissive dependency below has been relicensed. React is still MIT-licensed
+React; chess.js is still BSD-2-Clause. What is offered under GPLv3 is the
+combined distributed work, and every component keeps the licence its authors
+gave it.
+
+Full reasoning: `GPL_COMPLIANCE.md`. The engine specifically:
+`ENGINE_LICENSES.md` and `ENGINE_SOURCE.md`.
 
 ## A note on chess artwork
 
@@ -38,6 +53,7 @@ plain CSS colour scheme, not a copy of any particular site's artwork.
 | `@capacitor/status-bar` | 6.0.3 | MIT | Edge-to-edge layout |
 | `@capacitor-community/sqlite` | 6.0.2 | MIT | Primary persistence engine on device |
 | `vosk-browser` | 0.0.8 | Apache-2.0 | Offline speech recognition in the WebView |
+| `stockfish` (Stockfish.js) | 18.0.8 | **GPL-3.0** | The offline chess engine in `blindfold-engine-game`. This is the component that makes the distributed application GPLv3. |
 
 ## Redistributed model
 

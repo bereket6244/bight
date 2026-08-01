@@ -10,7 +10,7 @@ import { forksFrom } from '../chess/fork';
 import { isValidKnightRoute } from '../chess/knightRoute';
 import { occupancyFromFen } from '../chess/position';
 import { squareColor } from '../chess/square';
-import type { SquareName } from '../chess/types';
+import type { PieceColor, PieceType, SquareName } from '../chess/types';
 import type { ExpectedAnswer, Grade, Question, SubmittedAnswer } from './types';
 
 function describeSquares(squares: readonly SquareName[]): string {
@@ -111,6 +111,31 @@ export function gradeAnswer(expected: ExpectedAnswer, submitted: SubmittedAnswer
         missed: [],
         extra: [],
         explanation: correct ? 'Correct.' : `The answer is ${expected.correct}.`,
+      };
+    }
+
+    case 'placement': {
+      const placed = (submitted as Extract<SubmittedAnswer, { kind: 'placement' }>).placed;
+
+      const key = (p: { square: SquareName; type: string; color: string }): string =>
+        `${p.square}:${p.color}:${p.type}`;
+      const requiredKeys = new Set(expected.required.map(key));
+      const placedKeys = new Set(placed.map(key));
+
+      const missing = expected.required.filter((p) => !placedKeys.has(key(p)));
+      // With `exact`, anything not required is an error. Partial
+      // reconstruction asks for a subset and ignores everything else.
+      const surplus = expected.exact ? placed.filter((p) => !requiredKeys.has(key(p))) : [];
+
+      const correct = missing.length === 0 && surplus.length === 0;
+
+      return {
+        correct,
+        missed: missing.map((p) => p.square),
+        extra: surplus.map((p) => p.square),
+        explanation: correct
+          ? `${expected.required.length} piece${expected.required.length === 1 ? '' : 's'} placed correctly.`
+          : `${missing.length} still to place${surplus.length > 0 ? `, ${surplus.length} that should not be there` : ''}.`,
       };
     }
 
@@ -229,6 +254,8 @@ export function emptyAnswerFor(expected: ExpectedAnswer): SubmittedAnswer {
       return { kind: 'square-path', squares: [] };
     case 'piece-journey':
       return { kind: 'piece-journey', path: [] };
+    case 'placement':
+      return { kind: 'placement', placed: [] };
   }
 }
 
@@ -253,8 +280,34 @@ export function describeExpected(expected: ExpectedAnswer): string {
       return expected.exampleRoute.join(' - ');
     case 'piece-journey':
       return `${expected.exampleRoute.join(' - ')} (${expected.minMoves} moves)`;
+    case 'placement':
+      return expected.required.map(describePlacement).join(' ');
   }
 }
+
+/**
+ * One placement as `wNg1`: colour, piece letter, square.
+ *
+ * The piece letter is the standard chess one, not the first letter of the
+ * word — knight and king both start with "k", and rendering both as `k` made
+ * a placement answer ambiguous everywhere it was shown or parsed.
+ */
+function describePlacement(placement: {
+  square: SquareName;
+  type: PieceType;
+  color: PieceColor;
+}): string {
+  return `${placement.color === 'white' ? 'w' : 'b'}${PIECE_LETTERS[placement.type]}${placement.square}`;
+}
+
+const PIECE_LETTERS: Record<PieceType, string> = {
+  pawn: 'P',
+  knight: 'N',
+  bishop: 'B',
+  rook: 'R',
+  queen: 'Q',
+  king: 'K',
+};
 
 /** Renders a submitted answer for the review screen and stored history. */
 export function describeSubmitted(submitted: SubmittedAnswer): string {
@@ -276,6 +329,10 @@ export function describeSubmitted(submitted: SubmittedAnswer): string {
       return submitted.squares.length === 0 ? '(no answer)' : submitted.squares.join(' - ');
     case 'piece-journey':
       return submitted.path.length === 0 ? '(no answer)' : submitted.path.join(' - ');
+    case 'placement':
+      return submitted.placed.length === 0
+        ? '(no answer)'
+        : submitted.placed.map(describePlacement).join(' ');
   }
 }
 

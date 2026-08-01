@@ -50,6 +50,9 @@ describe('versioning is synchronized', () => {
         } else if (/\.(ts|tsx)$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
           // version.ts is allowed to contain it - it is the source of truth.
           if (relative.endsWith('core/version.ts')) continue;
+          // The engine config pins a *third-party* package version, which has
+          // nothing to do with Bight's own and must not track it.
+          if (relative.endsWith('services/engine/engineConfig.ts')) continue;
           const contents = readFileSync(join(root, relative), 'utf8');
           if (/['"]\d+\.\d+\.\d+['"]/.test(contents)) offenders.push(relative);
         }

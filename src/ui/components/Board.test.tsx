@@ -247,11 +247,116 @@ describe('timed reveal', () => {
   });
 });
 
-describe('hidden board', () => {
-  it('renders no pieces and shows a note', () => {
-    render(<Board fen={STARTING} orientation="white" labels="always" hidden />);
-    expect(screen.queryByTestId('piece-e1')).not.toBeInTheDocument();
-    expect(screen.getByText(/answer from memory/i)).toBeInTheDocument();
+describe('display modes', () => {
+  it('draws the position by default', () => {
+    render(<Board fen={STARTING} orientation="white" labels="always" />);
+    expect(screen.getByTestId('piece-e1')).toBeInTheDocument();
+    expect(screen.getAllByRole('gridcell')).toHaveLength(64);
+  });
+
+  it('collapses to nothing at all, reserving no space', () => {
+    // The old behaviour was `visibility: hidden`, which kept a board-sized
+    // blank square in the layout that the user had to scroll past.
+    const { container } = render(
+      <Board fen={STARTING} orientation="white" labels="always" displayMode="collapsed" />,
+    );
+    expect(container.firstChild).toBeNull();
+    expect(screen.queryByTestId('board')).not.toBeInTheDocument();
+    expect(screen.queryAllByRole('gridcell')).toHaveLength(0);
+  });
+
+  describe('empty-input', () => {
+    it('keeps 64 usable squares but draws no pieces', () => {
+      render(
+        <Board fen={STARTING} orientation="white" labels="always" displayMode="empty-input" />,
+      );
+      expect(screen.getAllByRole('gridcell')).toHaveLength(64);
+      expect(screen.queryByTestId('piece-e1')).not.toBeInTheDocument();
+      expect(document.querySelectorAll('.square svg')).toHaveLength(0);
+    });
+
+    it('is not hidden from assistive technology', () => {
+      render(
+        <Board fen={STARTING} orientation="white" labels="always" displayMode="empty-input" />,
+      );
+      // The grid is the only way to enter a move; hiding it from a screen
+      // reader would make the mode unplayable without sight.
+      expect(document.querySelector('[aria-hidden="true"] .square')).toBeNull();
+      expect(
+        screen.getByRole('grid', { name: /empty coordinate board/i }),
+      ).toBeInTheDocument();
+    });
+
+    it('labels squares by coordinate only, never by the piece standing there', () => {
+      render(
+        <Board fen={STARTING} orientation="white" labels="always" displayMode="empty-input" />,
+      );
+      expect(screen.getByTestId('square-e1')).toHaveAttribute('aria-label', 'e1');
+      for (const cell of screen.getAllByRole('gridcell')) {
+        expect(cell.getAttribute('aria-label') ?? '').not.toMatch(
+          /pawn|knight|bishop|rook|queen|king/i,
+        );
+      }
+    });
+
+    it('keeps the coordinate labels, which belong to the grid not the position', () => {
+      render(
+        <Board fen={STARTING} orientation="white" labels="always" displayMode="empty-input" />,
+      );
+      expect(document.querySelectorAll('.square-label--file').length).toBeGreaterThan(0);
+      expect(document.querySelectorAll('.square-label--rank').length).toBeGreaterThan(0);
+    });
+
+    it('draws no hint dots, which would give the hidden position away', () => {
+      render(
+        <Board
+          fen={STARTING}
+          orientation="white"
+          labels="always"
+          displayMode="empty-input"
+          marks={new Map([['e4', 'hint']])}
+        />,
+      );
+      expect(document.querySelectorAll('.hint-dot')).toHaveLength(0);
+    });
+
+    it('still reports taps, which is the whole point of it', async () => {
+      const user = userEvent.setup();
+      const onSquareTap = vi.fn();
+      render(
+        <Board
+          fen={STARTING}
+          orientation="white"
+          labels="always"
+          displayMode="empty-input"
+          onSquareTap={onSquareTap}
+        />,
+      );
+
+      await user.click(screen.getByTestId('square-e2'));
+      await user.click(screen.getByTestId('square-e4'));
+      expect(onSquareTap).toHaveBeenNthCalledWith(1, 'e2');
+      expect(onSquareTap).toHaveBeenNthCalledWith(2, 'e4');
+    });
+
+    it('still shows last-move marks, which the user already knows from the SAN', () => {
+      render(
+        <Board
+          fen={STARTING}
+          orientation="white"
+          labels="always"
+          displayMode="empty-input"
+          marks={
+            new Map([
+              ['e2', 'last-from'],
+              ['e4', 'last-to'],
+            ])
+          }
+        />,
+      );
+      expect(screen.getByTestId('square-e2').className).toContain('square--last-from');
+      expect(screen.getByTestId('square-e4').className).toContain('square--last-to');
+    });
   });
 });
 

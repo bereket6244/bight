@@ -40,8 +40,9 @@ describe('mode registry shape', () => {
   });
 
   it('keeps the browser to a readable number of cards', () => {
-    // The first version showed 11 modes and 42 variant cards.
-    expect(MODES.length).toBeLessThanOrEqual(12);
+    // The first version showed 11 modes and 42 variant cards. The blindfold
+    // pass added exactly one category of at most three cards on top.
+    expect(MODES.length).toBeLessThanOrEqual(15);
     for (const group of modesByCategory()) {
       expect(group.modes.length, group.label).toBeLessThanOrEqual(4);
     }

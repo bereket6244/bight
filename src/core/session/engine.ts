@@ -32,6 +32,7 @@ import type {
   AnswerSource,
   GeneratorContext,
   Question,
+  RequiredPlacement,
   SubmittedAnswer,
 } from '../training/types';
 import { knightTargets } from '../chess/geometry';
@@ -96,6 +97,29 @@ export interface Attempt {
   originCorrect?: boolean;
   /** Whether the right destination was chosen, independent of the origin. */
   destinationCorrect?: boolean;
+  /**
+   * Hints taken before this answer. Optional, so attempts written by earlier
+   * versions load unchanged. Blindfold progress reports hint-free accuracy
+   * separately, because a hinted answer is not unaided recall.
+   */
+  hintsUsed?: number;
+  /**
+   * Blindfold only: how long the sequence actually was, in plies, and how much
+   * of the board the user was actually shown.
+   *
+   * Denormalised onto the attempt exactly as `labels` and `timer` already are,
+   * because the progressive ladder can move the stage mid-session — the
+   * session's stored settings would say what the user *chose*, not what they
+   * were given.
+   */
+  plies?: number;
+  boardVisibility?: string;
+  /**
+   * Which blindfold question this was: `piece-location`, `occupancy`,
+   * `full-reconstruction` and so on. The mixed variant asks seven different
+   * things, so the variant id alone cannot say what skill was exercised.
+   */
+  blindfoldKind?: string;
 }
 
 /** A square the user got wrong, flashed briefly by the UI. */
@@ -121,6 +145,10 @@ export interface SessionState {
    * Empty for every other kind of question.
    */
   journey: SquareName[];
+  /** Pieces placed so far on a reconstruction question. */
+  placed: RequiredPlacement[];
+  /** Hints taken on the current question. Reset when the question changes. */
+  hintsUsed: number;
   /** The most recent wrong input, for a brief red flash. */
   rejected: RejectedInput | null;
   /**
@@ -182,7 +210,47 @@ function generatorContext(state: SessionState, deps: SessionDeps): GeneratorCont
     hideBoard: state.settings.hideBoard,
     density: state.settings.density,
     showHints: state.settings.showHints,
+    difficulty: state.settings.blindfoldDifficulty,
+    plies: state.settings.blindfoldPlies,
+    captureBias: state.settings.captureBias,
+    boardVisibility: state.settings.boardVisibility,
+    moveHistory: state.settings.moveHistory,
+    pacing: state.settings.pacing,
+    speakMoves: state.settings.speakMoves,
+    streak: state.streak,
+    recentAccuracy: recentAccuracy(state),
   };
+}
+
+/** Attempts considered "recent" by the progressive ladder. */
+const RECENT_WINDOW = 8;
+
+/**
+ * Accuracy over the last few attempts, or undefined before there are enough
+ * to mean anything. Undefined keeps the ladder from demoting on question two.
+ */
+function recentAccuracy(state: SessionState): number | undefined {
+  if (state.attempts.length < RECENT_WINDOW) return undefined;
+  const recent = state.attempts.slice(-RECENT_WINDOW);
+  return recent.filter((attempt) => attempt.correct).length / recent.length;
+}
+
+/**
+ * The pieces already standing on the board when a question begins.
+ *
+ * Reconstruction's correction variant draws a position with a few deliberate
+ * errors in it, and repairing it means adding what is missing and clearing
+ * what should not be there. Seeding `placed` from the drawn position makes
+ * those the same two actions as ordinary placement rather than a second
+ * mechanism. Questions that start from an empty board seed nothing.
+ */
+function initialPlacements(question: Question | null): RequiredPlacement[] {
+  if (question === null || question.expected.kind !== 'placement') return [];
+  const placements: RequiredPlacement[] = [];
+  for (const [square, piece] of occupancyFromFen(question.board.fen)) {
+    placements.push({ square, type: piece.type, color: piece.color });
+  }
+  return placements;
 }
 
 function nextQuestion(state: SessionState, deps: SessionDeps): Question {
@@ -212,6 +280,8 @@ export function startSession(
     retryQueue: [],
     selected: [],
     journey: [],
+    placed: [],
+    hintsUsed: 0,
     rejected: null,
     rejectionCount: 0,
     advanceToken: 0,
@@ -231,6 +301,7 @@ export function startSession(
   };
 
   state.current = nextQuestion(state, deps);
+  state.placed = initialPlacements(state.current);
   return state;
 }
 
@@ -336,6 +407,10 @@ function buildAttempt(
     extra,
     timestamp: now,
     isRetry: state.attempts.some((attempt) => attempt.questionId === question.id),
+    hintsUsed: state.hintsUsed,
+    plies: question.blindfold?.san.length,
+    boardVisibility: question.blindfold?.visibility,
+    blindfoldKind: question.blindfold?.kind,
   };
 }
 
@@ -379,6 +454,8 @@ function completeQuestion(
     bestStreak: Math.max(state.bestStreak, streak),
     selected: [],
     journey: [],
+    placed: [],
+    hintsUsed: 0,
     rejected: null,
     lockedUntil: now + ADVANCE_LOCK_MS,
     advanceToken: state.advanceToken + 1,
@@ -403,10 +480,20 @@ function advanceFrom(state: SessionState, deps: SessionDeps, now: number): Sessi
         questionStartedAt: now,
         selected: [],
         journey: [],
+        placed: initialPlacements(queued),
+        hintsUsed: 0,
         orientationFlip: !state.orientationFlip,
       };
     }
-    return { ...state, phase: 'finished', current: null, selected: [], journey: [] };
+    return {
+      ...state,
+      phase: 'finished',
+      current: null,
+      selected: [],
+      journey: [],
+      placed: [],
+      hintsUsed: 0,
+    };
   }
 
   const working: SessionState = {
@@ -415,13 +502,17 @@ function advanceFrom(state: SessionState, deps: SessionDeps, now: number): Sessi
     questionNumber: state.questionNumber + 1,
   };
 
+  const current = nextQuestion(working, deps);
+
   return {
     ...working,
-    current: nextQuestion(working, deps),
+    current,
     phase: 'question',
     questionStartedAt: now,
     selected: [],
     journey: [],
+    placed: initialPlacements(current),
+    hintsUsed: 0,
   };
 }
 
@@ -497,6 +588,8 @@ export function submitAnswer(
         : state.retryQueue,
       selected: [],
       journey: [],
+      placed: [],
+      hintsUsed: 0,
       rejected: null,
       lockedUntil: now + ADVANCE_LOCK_MS,
       advanceToken: state.advanceToken + 1,
@@ -648,6 +741,141 @@ function withPieceAt(
   const next = new Map(occupancy);
   next.set(square, { type: piece.type, color: piece.color });
   return next;
+}
+
+/**
+ * Places one piece on a reconstruction question.
+ *
+ * Reconstruction is answered a piece at a time, in the same continuous style
+ * as multi-square questions: a correct placement stays on the board, a wrong
+ * one flashes red and is discarded, and the question completes itself the
+ * moment every required piece stands on its square. There is no Submit.
+ *
+ * Wrongness here means "not one of the pieces this question asked for". A
+ * partial-reconstruction question asks about a subset, so a piece that really
+ * is on the board but outside the subset is still not part of this answer.
+ */
+export function placePiece(
+  state: SessionState,
+  placement: RequiredPlacement,
+  source: AnswerSource,
+  deps: SessionDeps = {},
+  now: number = Date.now(),
+): SessionState {
+  if (state.phase !== 'question' || state.current === null) return state;
+  if (isLocked(state, now)) return state;
+
+  const question = state.current;
+  const expected = question.expected;
+  if (expected.kind !== 'placement') return state;
+
+  const placementKey = placementIdentity(placement);
+
+  // Re-placing a piece already standing there is a no-op, never a mistake.
+  if (state.placed.some((p) => placementIdentity(p) === placementKey)) return state;
+
+  if (!expected.required.some((p) => placementIdentity(p) === placementKey)) {
+    const submitted: SubmittedAnswer = {
+      kind: 'placement',
+      placed: [...state.placed, placement],
+    };
+    const attempt = buildAttempt(
+      state,
+      question,
+      submitted,
+      false,
+      [],
+      [placement.square],
+      source,
+      now,
+    );
+    return rejectAnswer(state, question, attempt, [placement.square], null);
+  }
+
+  // One piece to a square: a correct placement replaces anything standing there.
+  const placed = [...state.placed.filter((p) => p.square !== placement.square), placement];
+  return settlePlacement(state, question, placed, source, deps, now);
+}
+
+/**
+ * Clears a square on a reconstruction question.
+ *
+ * On the correction variant this is how a wrongly-placed piece is thrown out,
+ * so it is a real answer and can complete the question. Clearing a piece that
+ * genuinely belongs there is a mistake and is rejected like any other, which
+ * costs the user nothing beyond a flash — the piece stays put.
+ */
+export function removePlacement(
+  state: SessionState,
+  square: SquareName,
+  source: AnswerSource,
+  deps: SessionDeps = {},
+  now: number = Date.now(),
+): SessionState {
+  if (state.phase !== 'question' || state.current === null) return state;
+  if (isLocked(state, now)) return state;
+
+  const question = state.current;
+  const expected = question.expected;
+  if (expected.kind !== 'placement') return state;
+
+  const target = state.placed.find((p) => p.square === square);
+  if (target === undefined) return state;
+
+  const belongs = expected.required.some(
+    (p) => placementIdentity(p) === placementIdentity(target),
+  );
+  if (belongs) {
+    const submitted: SubmittedAnswer = { kind: 'placement', placed: state.placed };
+    const attempt = buildAttempt(state, question, submitted, false, [], [square], source, now);
+    return rejectAnswer(state, question, attempt, [square], null);
+  }
+
+  const placed = state.placed.filter((p) => p.square !== square);
+  return settlePlacement(state, question, placed, source, deps, now);
+}
+
+function placementIdentity(placement: RequiredPlacement): string {
+  return `${placement.square}:${placement.color}:${placement.type}`;
+}
+
+/**
+ * Applies a new board to a placement question, completing it if that board is
+ * now the answer.
+ *
+ * Completion is decided by `gradeQuestion`, not by counting pieces, so the
+ * "is this finished" rule and the "was this right" rule cannot drift apart —
+ * which matters on the correction variant, where a leftover piece in the wrong
+ * place is a failure even though nothing is missing.
+ */
+function settlePlacement(
+  state: SessionState,
+  question: Question,
+  placed: RequiredPlacement[],
+  source: AnswerSource,
+  deps: SessionDeps,
+  now: number,
+): SessionState {
+  const submitted: SubmittedAnswer = { kind: 'placement', placed };
+  if (!gradeQuestion(question, submitted).correct) {
+    return { ...state, placed, rejected: null };
+  }
+  const attempt = buildAttempt(state, question, submitted, true, [], [], source, now);
+  return completeQuestion({ ...state, placed }, attempt, deps, now);
+}
+
+/**
+ * Records that the user took a hint on the current question.
+ *
+ * Hints are counted, not blocked, and nothing about the answer is revealed
+ * here — the UI decides what a hint shows. The count rides along on the
+ * attempt so blindfold progress can report unaided recall separately from
+ * assisted answers.
+ */
+export function recordHint(state: SessionState): SessionState {
+  if (state.phase !== 'question' || state.current === null) return state;
+  if (!state.settings.allowHints) return state;
+  return { ...state, hintsUsed: state.hintsUsed + 1 };
 }
 
 /** Clears the red flash once the UI has shown it. */

@@ -30,6 +30,11 @@ import {
   computeStreak,
   evaluateAchievements,
 } from '../../core/progress/streak';
+import {
+  blindfoldProgress,
+  kindLabel,
+  RETENTION_WINDOW,
+} from '../../core/progress/blindfold';
 import { squaresInDisplayOrder } from '../../core/chess/square';
 import { getMode } from '../../core/training/registry';
 import { MODES } from '../../core/training/registry';
@@ -100,6 +105,11 @@ export function ProgressScreen() {
   const weak = weakestSquares(attempts, 8).filter((entry) => entry.attempts > 0);
   const missed = mostMissedTargets(attempts, 6);
   const wrong = mostWronglySelected(attempts, 6);
+  const blindfold = blindfoldProgress(attempts);
+  const weakestKinds = [...blindfold.byKind.entries()]
+    .filter(([, tally]) => tally.attempts >= 3 && tally.accuracy < 1)
+    .sort((a, b) => a[1].accuracy - b[1].accuracy)
+    .slice(0, 3);
   const trend = accuracyTrend(attempts, 14);
   const trendChange = improvement(attempts);
   const streak = computeStreak(buildDailyRecords(sessions));
@@ -175,6 +185,89 @@ export function ProgressScreen() {
           {MASTERY_EXPLANATION}
         </p>
       </div>
+
+      {blindfold.overall.attempts > 0 ? (
+        <div className="card" data-testid="blindfold-progress">
+          <h2 className="card__title">Blindfold</h2>
+          <p className="card__subtitle" style={{ marginBottom: 'var(--gap)' }}>
+            Kept separate from board mastery: losing track of a piece is not the
+            same as not knowing a square.
+          </p>
+
+          <div className="stat-grid">
+            <div className="stat">
+              <div className="stat__label">Accuracy</div>
+              <div className="stat__value">
+                {Math.round(blindfold.overall.accuracy * 100)}%
+              </div>
+            </div>
+            <div className="stat">
+              <div className="stat__label">Without hints</div>
+              <div className="stat__value">
+                {blindfold.overall.unaided === 0
+                  ? '—'
+                  : `${Math.round(blindfold.overall.unaidedAccuracy * 100)}%`}
+              </div>
+            </div>
+            <div className="stat">
+              <div className="stat__label">Sequence held</div>
+              <div className="stat__value">
+                {blindfold.provenPlies === null ? '—' : `${blindfold.provenPlies} plies`}
+              </div>
+            </div>
+          </div>
+
+          <div className="recommendation" data-testid="blindfold-recommendation">
+            <strong>{blindfold.recommendation.headline}</strong>
+            <div className="list-row__meta">{blindfold.recommendation.because}</div>
+          </div>
+
+          {[...blindfold.byLength.entries()]
+            .sort((a, b) => a[0] - b[0])
+            .map(([plies, tally]) => (
+              <BarRow
+                key={plies}
+                label={`${plies} plies`}
+                value={tally.accuracy}
+                detail={`${Math.round(tally.accuracy * 100)}% of ${tally.attempts}`}
+              />
+            ))}
+
+          {/* Only the weakest few kinds: a row per question type would be the
+              wall of numbers this section is meant not to be. */}
+          {weakestKinds.length > 0 ? (
+            <>
+              <h3 className="card__title" style={{ marginTop: 'var(--gap)', fontSize: '0.9rem' }}>
+                Hardest question types
+              </h3>
+              {weakestKinds.map(([kind, tally]) => (
+                <BarRow
+                  key={kind}
+                  label={kindLabel(kind)}
+                  value={tally.accuracy}
+                  detail={`${Math.round(tally.accuracy * 100)}% of ${tally.attempts}`}
+                />
+              ))}
+            </>
+          ) : null}
+
+          <p className="card__subtitle" style={{ marginTop: 'var(--gap)' }}>
+            {blindfold.sessions} session{blindfold.sessions === 1 ? '' : 's'} across{' '}
+            {blindfold.days} day{blindfold.days === 1 ? '' : 's'}
+            {blindfold.recentAccuracy === null
+              ? ''
+              : ` · ${Math.round(blindfold.recentAccuracy * 100)}% over the last ${Math.min(
+                  RETENTION_WINDOW,
+                  blindfold.overall.attempts,
+                )}`}
+            {blindfold.overall.hintsTaken > 0
+              ? ` · ${blindfold.overall.hintsTaken} hint${
+                  blindfold.overall.hintsTaken === 1 ? '' : 's'
+                } taken, never counted as mistakes`
+              : ''}
+          </p>
+        </div>
+      ) : null}
 
       {weak.length > 0 ? (
         <div className="card">

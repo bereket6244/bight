@@ -40,7 +40,37 @@ export type SquareMark =
   /** A legal/geometric destination hint. */
   | 'hint'
   /** The piece currently picked up. */
-  | 'origin';
+  | 'origin'
+  /** Where the last move started. */
+  | 'last-from'
+  /** Where the last move ended. */
+  | 'last-to';
+
+/**
+ * What the board is for right now.
+ *
+ * This used to be a single `hidden` boolean, which conflated two states that
+ * need opposite treatment and shipped a genuinely unusable screen: in
+ * Blindfold vs Computer the board *is* the move-entry surface, so hiding it
+ * left the user with nothing to tap, while in reconstruction the hidden board
+ * reserved a board-sized blank gap the user had to scroll past. Both were
+ * reported from a real Android device.
+ */
+export type BoardDisplayMode =
+  /** Pieces drawn, normal interaction. */
+  | 'position'
+  /**
+   * The grid and its labels are drawn; the pieces are not. Taps still work,
+   * so a blindfold game can be played on it. Nothing about the hidden
+   * position may be exposed — not through pieces, not through hint marks, not
+   * through square labels.
+   */
+  | 'empty-input'
+  /**
+   * No board at all, and **no layout space reserved**. For when there is
+   * nothing to look at and nothing to tap.
+   */
+  | 'collapsed';
 
 export interface BoardProps {
   /** FEN placement field. */
@@ -61,8 +91,14 @@ export interface BoardProps {
    * on a board with pieces on it.
    */
   decorativePieces?: boolean;
-  /** Hides the whole board for blindfold variants. */
-  hidden?: boolean;
+  /**
+   * What the board is for. Defaults to `position`.
+   *
+   * `collapsed` renders nothing at all, so the caller does not need to guard
+   * the element itself — but a caller that has nothing to show may simply not
+   * render a `<Board>`.
+   */
+  displayMode?: BoardDisplayMode;
   /**
    * Milliseconds before prompt marks are hidden. Undefined keeps them visible.
    * The board keeps rendering; only the marks disappear.
@@ -89,11 +125,12 @@ export const Board = memo(function Board({
   onMove,
   movableSquares = [],
   decorativePieces = false,
-  hidden = false,
+  displayMode = 'position',
   revealMs,
   disabled = false,
   ariaLabel = 'Chess board',
 }: BoardProps) {
+  const showPieces = displayMode === 'position';
   const occupancy = useMemo(() => {
     try {
       return occupancyFromFen(fen);
@@ -167,17 +204,26 @@ export const Board = memo(function Board({
     [marks, promptVisible],
   );
 
+  // Nothing to look at and nothing to tap: render nothing, so no layout space
+  // is reserved. A hidden-but-present board left a board-sized blank gap the
+  // user had to scroll past, which is what a real device found.
+  if (displayMode === 'collapsed') return null;
+
   return (
     <div
-      className={`board-wrap${hidden ? ' board-wrap--hidden' : ''}`}
+      className={`board-wrap${showPieces ? '' : ' board-wrap--empty'}`}
       data-testid="board"
+      data-display-mode={displayMode}
       data-orientation={orientation}
     >
       <div
         className="board"
         role="grid"
-        aria-label={ariaLabel}
-        aria-hidden={hidden ? 'true' : undefined}
+        aria-label={
+          showPieces
+            ? ariaLabel
+            : 'Empty coordinate board. Select origin, then destination.'
+        }
       >
         {squares.map((square) => {
           const piece = occupancy.get(square);
@@ -208,7 +254,10 @@ export const Board = memo(function Board({
               data-square={square}
               data-testid={`square-${square}`}
               aria-label={
-                piece === undefined
+                // On an empty-input board the label is the coordinate and
+                // nothing else. Naming the piece would read the hidden
+                // position out to a screen reader.
+                piece === undefined || !showPieces
                   ? square
                   : `${square}, ${piece.color} ${piece.type}`
               }
@@ -230,7 +279,21 @@ export const Board = memo(function Board({
                 setSelectedOrigin(null);
               }}
             >
-              {hidden ? null : (
+              {/* Labels and the last-move marks belong to the grid, not to
+                  the position, so they survive into `empty-input`. Pieces,
+                  hint dots and badges do not: each of them would give away
+                  something the user is meant to be holding in their head. */}
+              {showLabelFile ? (
+                <span className="square-label square-label--file" aria-hidden="true">
+                  {fileLetterOf(square)}
+                </span>
+              ) : null}
+              {showLabelRank ? (
+                <span className="square-label square-label--rank" aria-hidden="true">
+                  {rankDigitOf(square)}
+                </span>
+              ) : null}
+              {showPieces ? (
                 <>
                   {piece === undefined ? null : (
                     <span
@@ -251,23 +314,12 @@ export const Board = memo(function Board({
                   )}
                   {mark === 'hint' ? <span className="hint-dot" aria-hidden="true" /> : null}
                   {badge !== undefined ? <span className="square-badge">{badge}</span> : null}
-                  {showLabelFile ? (
-                    <span className="square-label square-label--file" aria-hidden="true">
-                      {fileLetterOf(square)}
-                    </span>
-                  ) : null}
-                  {showLabelRank ? (
-                    <span className="square-label square-label--rank" aria-hidden="true">
-                      {rankDigitOf(square)}
-                    </span>
-                  ) : null}
                 </>
-              )}
+              ) : null}
             </button>
           );
         })}
       </div>
-      {hidden ? <p className="board-hidden-note">Board hidden - answer from memory</p> : null}
     </div>
   );
 });
