@@ -8,29 +8,31 @@ buried.
 
 | | |
 | --- | --- |
-| Branch | `feature/blindfold-stockfish-handoff` |
-| Base | `main` @ `5838304` (MIT, no engine, unchanged) |
+| Branch | `main` |
+| Merged | `feature/blindfold-stockfish-handoff`, non-squash, full history |
 | Phase A checkpoint | `bab8ae1` — `feat: add blindfold training drills` |
 | Phase A completion | `67a442b` — presets, progress model, real-Chromium review |
 | Engine commit | `3cb106d` — the offline Stockfish opponent |
-| App version | **2.0.0** (`src/core/version.ts` is the source of truth) |
-| Android versionCode | 20000 (derived: major×10000 + minor×100 + patch) |
+| Repair pass | `e45104c`, `163cb51`, `85d933a`, `d38e59e`, `91b4675` — the four device-reported failures and the release pipeline |
+| App version | **2.1.0** (`src/core/version.ts` is the source of truth) |
+| Android versionCode | 20100 (derived: major×10000 + minor×100 + patch) |
 | Storage schema | **1, unchanged** — the blindfold fields are optional |
 | Backup format | `bight-backup`, schemaVersion 1; 1.3.0 backups import untouched |
-| Licence | **GPL-3.0-or-later on this branch.** `main` stays MIT. |
-| Tests | Vitest, **878 across 32 files**, plus 48 real-browser layout checks |
+| Licence | **GPL-3.0-or-later.** 1.4.0 was the last engine-free MIT build. |
+| Tests | Vitest, **982 across 35 files**, plus 48 layout + 36 blindfold-layout checks |
 
 ### APKs
 
 | File | Size | SHA-256 | Engine | Licence |
 | --- | --- | --- | --- | --- |
-| `release/Bight.apk` | 59.70 MB | `2f8d92e7358b487bad0f2a27e844358bf03691e14906d97879d9017b96eaa166` | yes | GPLv3 |
-| `release/Bight-engine.apk` | 59.70 MB | identical to the above | yes | GPLv3 |
-| `release/Bight-blindfold-checkpoint.apk` | 54.31 MB | `55a36c07eb5a53b47054cc5522b529a15c20fdad7bb9c6abd0a0d56fc32ad7d2` | **no** | MIT |
+| `release/Bight-v2.1.0-GPL-engine.apk` | 59.71 MB | `afe1681a2f21218c2a46efd7438550753b44e2e78fc8fee597f4d00f856708d6` | yes | GPLv3 |
+| `release/Bight.apk` | 59.71 MB | byte-identical convenience copy of the above | yes | GPLv3 |
+| `release/Bight-v1.4.0-MIT-blindfold.apk` | 54.31 MB | `55a36c07eb5a53b47054cc5522b529a15c20fdad7bb9c6abd0a0d56fc32ad7d2` | **no** | MIT |
 
 All debug-signed. No production signing key exists for this project and none
-was fabricated. The checkpoint APK is kept deliberately: if the engine has to
-be withdrawn, a known-good engine-free build already exists.
+was fabricated. The 1.4.0 build is kept deliberately: if the engine has to be
+withdrawn, a known-good engine-free build already exists. Full index with
+provenance in `release/RELEASES.md`.
 
 ## Modes
 
@@ -96,9 +98,7 @@ node scripts/browser-tests.mjs           # 48 layout checks, 4 viewports
 
 - Sequences are **generated, not curated** — legal and varied, but not
   instructive. A curated source would be a real improvement.
-- The progressive ladder is **per-session**; it does not remember the stage
-  reached last time.
-- `speakMoves` has no blindfold-specific test.
+- Speech is asserted in tests but has never been *heard* on a device.
 - No blindfold drill has been used on Android hardware.
 
 ## Engine
@@ -114,7 +114,7 @@ node scripts/browser-tests.mjs           # 48 layout checks, 4 viewports
 | Worker | `stockfish-18-lite-single.js`, 21,429 bytes, SHA-256 `5243fd9b…c4a391` |
 | WASM | `stockfish-18-lite-single.wasm`, 7,295,411 bytes, SHA-256 `a8fbc05e…9096f1` |
 | Upstream | Stockfish 18 via <https://github.com/nmrugg/stockfish.js> tag `v18.0.8` |
-| APK cost | +5.4 MB (54.31 → 59.70 MB) |
+| APK cost | +5.4 MB (54.31 → 59.71 MB) |
 | Boot time | 229 ms dev, 205 ms production, desktop Chromium |
 
 `EngineService` → `StockfishEngineService` → `EngineWorkerClient` → Worker.
@@ -132,7 +132,10 @@ Difficulty is four labels backed by `Skill Level` plus a depth cap.
 | --- | --- |
 | `services/engine/engine.test.ts` | 35 — parsing, timeouts, crashes, stale replies, handshake race |
 | `core/engineGame/game.test.ts` | 26 — legality enforcement, promotion, every ending |
-| `ui/EngineGame.integration.test.tsx` | 17 — the screen, including failure recovery |
+| `ui/EngineGame.integration.test.tsx` | 51 — hidden play, cadence, history, background/resume, resume-a-save |
+| `services/engine/weakPlay.test.ts` | 28 — the difficulty ladder, measured over seeded runs |
+| `core/engineGame/savedGame.test.ts` | 14 — saves replay or are refused |
+| `scripts/engine-difficulty-check.mjs` | the weakening reaches the real engine |
 | `scripts/engine-smoke.mjs` | the real engine in real Chromium, dev **and** production build |
 | `scripts/engine-game-check.mjs` | a real game played against the real engine |
 | `scripts/inspect-apk.mjs` | engine assets asserted present in the APK |
@@ -140,11 +143,10 @@ Difficulty is four labels backed by `Skill Level` plus a depth cap.
 ### Engine gaps
 
 - **No Android hardware or emulator run.** The biggest gap by far.
-- **No saved unfinished game.** Leaving the screen ends it. The brief called
-  this "where practical"; it was not done.
-- Backgrounding stops the search but does not persist the game.
-- No MultiPV or deliberate-error model — weakness is `Skill Level` and depth,
-  which cannot produce a nonsensical move.
+- Engine-game saves are **local only** and not part of backup/restore. Losing
+  them loses an unfinished game, nothing else.
+- Difficulty is **uncalibrated**. The levels are measurably ordered against
+  each other; none is tied to any rating.
 
 ## Architecture notes worth knowing
 

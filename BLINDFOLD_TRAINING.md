@@ -140,6 +140,28 @@ attempt as `blindfoldKind`, so progress can tell them apart.
 The balance rules matter: a question type whose answer is usually "yes" trains
 guessing.
 
+## How the board is shown
+
+`Board` takes an explicit `displayMode`, never a `hidden` boolean:
+
+| Mode | Draws | Interactive | Layout space |
+| --- | --- | --- | --- |
+| `position` | pieces | yes | yes |
+| `empty-input` | grid and coordinate labels only | **yes** | yes |
+| `collapsed` | nothing | no | **none** |
+
+A single boolean meaning `visibility: hidden` shipped two device-breaking bugs
+at once: it made the only move-entry surface in Blindfold vs Computer invisible
+while leaving its buttons in the DOM, and it reserved a board-sized blank gap in
+reconstruction that the user had to scroll past.
+
+During hidden playback the board is `collapsed` — absent from the layout, with
+one line explaining why. When answering begins it returns as `position`, with
+the palette directly beneath it. The engine game uses `empty-input`, where
+nothing about the hidden position may leak: no pieces, no legal-destination
+marks, no piece names in square labels. Last-move marks are allowed, because
+the user can already read the move in SAN.
+
 ## Reconstruction
 
 Three variants, all answered with `ExpectedAnswer.kind === 'placement'`.
@@ -286,6 +308,16 @@ Before adding a whole new *mode*, check it is not a variant of an existing one.
 The mode-count guards will refuse a fourth card in this category, and that is
 the guard working, not an obstacle to route around.
 
+## Progressive stage persistence
+
+The ladder no longer restarts each session. The hardest stage the user has
+held — same standard as `provenPlies`: repeated **unaided** success, never one
+lucky answer — is derived from stored attempts and restored as the starting
+point when adaptive progression is on. Manual selection overrides it, and the
+restoration is explained on the setup page rather than silently moving a
+control. Because it is derived rather than stored separately, it needs no
+migration and works from existing data and old backups.
+
 ## Known limitations
 
 - **Sequences are generated, not curated.** They are legal and varied but not
@@ -293,8 +325,9 @@ the guard working, not an obstacle to route around.
   would be a genuine improvement.
 - **Never run on Android hardware.** Every layout and behaviour claim comes
   from Chromium at phone viewports.
-- **Speech is untested here.** `speakMoves` calls the same `speak()` the rest
-  of the app uses, but no blindfold-specific speech test exists.
-- **The progressive ladder is per-session.** It reads the current streak and
-  recent accuracy, so it starts from the chosen stage every session rather than
-  remembering where the user got to.
+- **Speech is asserted, not heard.** Tests prove the app asks for both sides to
+  be spoken and never speaks a refused move; whether audio actually comes out
+  needs a device.
+- **Sequences are still generated rather than curated.** A curated pool of
+  instructive openings and middlegames was deferred: it was the lowest-priority
+  item in the repair pass and none of the reported failures depended on it.

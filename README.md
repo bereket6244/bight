@@ -3,10 +3,13 @@
 **Board sight.** An offline Android trainer for chess coordinates and board
 vision.
 
-Bight is not a chess app. You cannot play a game in it, there is no engine, no
-puzzles, no opponent and no multiplayer. It trains one narrow thing: knowing
-the board — naming any square instantly, seeing what a piece attacks from
-where it stands, and holding all of that in your head without looking.
+Bight trains one narrow thing: knowing the board — naming any square instantly,
+seeing what a piece attacks from where it stands, and holding all of that in
+your head without looking. There are no puzzles, no multiplayer, and no chess
+library of openings or games.
+
+Since 2.0.0 it can also play you a blindfold game against Stockfish running on
+your phone, as the end of that progression rather than as a general chess app.
 
 Everything runs on the device. No account, no server, no adverts, no
 telemetry, no network calls of any kind after installation.
@@ -15,7 +18,7 @@ telemetry, no network calls of any kind after installation.
 
 ## What you can practice
 
-Eleven modes in six groups. Variants that differ only by timing, orientation
+Fifteen modes in seven groups. Variants that differ only by timing, orientation
 or prompt visibility are settings inside a mode, not separate cards.
 
 **Coordinates** — Find the square (see a coordinate, tap it), Name the square
@@ -118,6 +121,39 @@ runtime from tested rules, and the test suite cross-checks Bight's attack
 generation against `chess.js` for every piece type, colour and origin square.
 
 ---
+
+## Blindfold training
+
+The drills that teach holding a position in your head and updating it as moves
+go by. Full detail in `BLINDFOLD_TRAINING.md`.
+
+**Track a Position** — a legal move sequence is played out, then one targeted
+question about the position it produced: where a piece ended, what stands on a
+square, whether a square is occupied, whose move it is, whether a named piece
+survived, what a capture took, or what attacks what.
+
+**Reconstruct a Position** — rebuild it by tapping a piece then a square.
+Either a named subset, the whole position, or repair one shown with a few
+deliberate errors. Correct placements stay, wrong ones flash and are discarded,
+and the question completes itself. The palette always offers all twelve pieces
+and shows no counts — a palette listing only what you still need would hand
+over the material balance.
+
+**Progressive Blindfold** — the same questions up a six-stage ladder that
+removes visual help a stage at a time. The hardest stage you have held without
+hints is restored next session.
+
+**Blindfold vs Computer** — a whole game against Stockfish 18, bundled and run
+on the device with no network at any point. When the pieces are hidden you
+still get a **visible, empty coordinate grid**: tap origin, tap destination.
+The move you played and the computer's reply are marked on it in amber and
+stated in words, and the computer always takes a moment so you can tell that
+something happened.
+
+Four opponent levels — Beginner, Easy, Intermediate, Strong. They are described
+by how they play, never by a rating: Beginner hangs material and misses simple
+threats; Strong plays properly. **No Elo is claimed**, because none has been
+measured.
 
 ## Requirements
 
@@ -285,7 +321,24 @@ for broad storage access.
 
 ## Licence
 
-MIT — see `LICENSE`.
+**GPL-3.0-or-later.** Bight bundles Stockfish, which is GPLv3, so the
+distributed application is offered as a whole under the GPL. Bight's own code
+remains available under MIT — see `LICENSE-MIT`. Version 1.4.0 was the last
+engine-free MIT build and is kept in `release/`.
+
+See `GPL_COMPLIANCE.md`, `ENGINE_SOURCE.md` and `ENGINE_LICENSES.md`.
+
+### Downloads
+
+Builds are named for what they are:
+
+    Bight-v<version>-<licence>-<variant>.apk
+
+The latest is `release/Bight-v2.1.0-GPL-engine.apk`, with its `.sha256`
+alongside. `release/Bight.apk` is a byte-identical convenience copy. Every
+verified build is indexed in `release/RELEASES.md`.
+
+---
 
 All chess artwork in Bight is original. It bundles no Lichess or Chess.com
 assets and is not affiliated with either. See `THIRD_PARTY_NOTICES.md`.

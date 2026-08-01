@@ -26,7 +26,7 @@ took the suite to 800 tests. That commit's APK is the one kept in the tree:
 
 | | |
 | --- | --- |
-| Checkpoint APK | `release/Bight-blindfold-checkpoint.apk` |
+| Checkpoint APK | `release/Bight-v1.4.0-MIT-blindfold.apk` |
 | SHA-256 | `55a36c07eb5a53b47054cc5522b529a15c20fdad7bb9c6abd0a0d56fc32ad7d2` |
 | Size | 54.31 MB |
 | Engine | none — `inspect-apk` reports `NONE (engine-free build)` |
@@ -34,7 +34,7 @@ took the suite to 800 tests. That commit's APK is the one kept in the tree:
 Both commits contain no engine code and no GPL obligation. Returning to either
 restores an MIT-licensed app with the blindfold drills fully working.
 
-`release/Bight.apk` is the engine build (59.89 MB). The checkpoint APK is kept
+`release/Bight.apk` is the current engine build. The checkpoint APK is kept
 alongside it deliberately: if the engine ever needs to be withdrawn, the
 known-good engine-free build is already there and does not need rebuilding.
 
@@ -54,20 +54,22 @@ APK with no network access at any point.
 | Responds to `Skill Level 0` | yes, still returns legal moves |
 | WASM served correctly | `application/wasm` |
 | Present in the APK | 4 files under `assets/public/engine/`, wasm included |
-| APK size | 54.31 MB → 59.76 MB (+5.45 MB) |
+| APK size | 54.31 MB → 59.71 MB (+5.4 MB) |
 
 ## Architecture
 
 ```
 src/services/engine/
   engineTypes.ts             the vocabulary; imports nothing from Bight
-  engineConfig.ts            asset paths, timeouts, difficulty presets
+  engineConfig.ts            asset paths and timeouts
+  weakPlay.ts                the difficulty model: MultiPV candidate selection
   UciParser.ts               pure text parsing, exhaustively tested
   EngineWorkerClient.ts      Worker lifecycle, one outstanding request, timeouts
   StockfishEngineService.ts  the EngineService implementation
   index.ts                   the only import surface
 
-src/core/engineGame/game.ts  the game itself, chess.js-authoritative
+src/core/engineGame/game.ts       the game itself, chess.js-authoritative
+src/core/engineGame/savedGame.ts  resuming an unfinished game
 src/ui/screens/EngineGameScreen.tsx   the only screen that touches the engine
 ```
 
@@ -121,23 +123,72 @@ The Worker finds its own `.wasm` by replacing `.js` in its own URL, which is
 why both files sit in the same directory under a plain path. No bundler import,
 no hashing, no inlining.
 
+## Move presentation
+
+A reply that lands in 40ms reads as nothing having happened. The engine turn
+therefore has a **minimum presentation interval** (`MIN_THINKING_MS`, 800ms)
+that runs *concurrently* with the search: a level that genuinely thinks for a
+second is unaffected, and only an implausibly fast reply is held back.
+
+Alongside it: amber last-move marks on origin and destination, distinct from
+the selection and rejection marks; a "Computer played …" live region so the
+information is never carried by colour alone; and both sides spoken when
+speech is on.
+
+Every computer turn carries a token. Resign, Try again, Play again, unmount
+and backgrounding all invalidate it, so a reply arriving afterwards is dropped
+rather than played onto a game that has moved on.
+
+## Lifecycle across backgrounding
+
+Hiding the app abandons the turn and records that the computer still owes a
+move; returning plays exactly one, never two. Unfinished games are saved as
+their move list and replayed through chess.js on return — see
+`core/engineGame/savedGame.ts`. Nothing about the engine is stored.
+
 ## Difficulty
 
-Four labels — Very easy, Easy, Moderate, Strong — implemented as `Skill Level`
-plus a depth cap and a movetime.
+Four labels — **Beginner, Easy, Intermediate, Strong** — implemented in
+`services/engine/weakPlay.ts`.
 
-**No Elo is claimed.** Stockfish's `UCI_LimitStrength`/`UCI_Elo` is calibrated
-against its own search rather than any site's rating pool, and effective
-strength shifts with the time control, so a number here would be one this
-project has not measured. The labels describe how the level plays instead.
+A real user reported that "Easy" played much too well, and it did: `Skill
+Level` plus a shallow depth is not a beginner model, because shallow Stockfish
+is still a strong club player. The obvious lever does not reach either — the
+bundled build advertises `UCI_LimitStrength` with **`UCI_Elo` minimum 1320**,
+already well above a beginner.
+
+So the engine is asked for several candidates at once (MultiPV) with a score
+for each, and one of *those* is chosen by a seeded, per-level weighted
+distribution:
+
+| Level | Candidates | Tolerance | Deviates |
+| --- | --- | --- | --- |
+| Beginner | 12 | 900 cp | 80% |
+| Easy | 8 | 350 cp | 55% |
+| Intermediate | 4 | 90 cp | 20% |
+| Strong | 1 | — | never |
+
+Every choice is a move Stockfish evaluated and reported, so a bad one is
+plausible rather than nonsense. No level declines a forced mate or walks into
+one, and none exceeds its own tolerance. Selection is pure and seeded, so the
+behaviour is asserted rather than described, and chess.js still validates the
+result.
+
+Stored setting ids are unchanged (`very-easy`, `easy`, `moderate`, `strong`),
+so saved settings and backups keep working.
+
+**No Elo is claimed.** `UCI_Elo` is calibrated against Stockfish's own search
+rather than any site's rating pool, and effective strength shifts with the time
+control, so a number here would be one this project has not measured. This is
+behavioural weakening, and is documented as such.
 
 ## Verification
 
 | Command | What it proves |
 | --- | --- |
-| `npx vitest run src/services/engine/engine.test.ts` | 33 tests: UCI parsing, timeouts, crashes, stale replies, dispose |
+| `npx vitest run src/services/engine/engine.test.ts` | 35 tests: UCI parsing, timeouts, crashes, stale replies, dispose |
 | `npx vitest run src/core/engineGame/game.test.ts` | 26 tests: legality enforcement, illegal engine moves refused, promotion, every ending |
-| `npx vitest run src/ui/EngineGame.integration.test.tsx` | 14 tests: the screen, with an injected engine that misbehaves on demand |
+| `npx vitest run src/ui/EngineGame.integration.test.tsx` | 51 tests: the screen, with an injected engine that misbehaves on demand |
 | `node scripts/engine-smoke.mjs` | the real engine, in real Chromium, on the dev server |
 | `node scripts/engine-smoke.mjs --dist` | the same against the production build |
 | `node scripts/inspect-apk.mjs` | the engine assets are actually inside the APK |

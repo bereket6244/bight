@@ -1,9 +1,9 @@
 # GPL compliance for the engine-enabled build
 
-**Short version:** this branch bundles Stockfish, which is GPLv3. The
-application distributed from this branch is therefore offered as a whole under
-GPLv3. Bight's own code remains available under MIT as well, and every
-third-party licence is preserved unchanged.
+**Short version:** Bight bundles Stockfish, which is GPLv3. The distributed
+application is therefore offered as a whole under GPLv3. Bight's own code
+remains available under MIT as well, and every third-party licence is preserved
+unchanged.
 
 This document records what was checked and why the conclusion follows. It is a
 statement of the approach taken, not legal advice.
@@ -12,13 +12,13 @@ statement of the approach taken, not legal advice.
 
 | | |
 | --- | --- |
-| Branch | `feature/blindfold-stockfish-handoff` |
+| Branch | `main` (merged from `feature/blindfold-stockfish-handoff`) |
 | Applies from | the commit that adds `public/engine` and `src/services/engine` |
-| `main` | **unchanged.** `main` is MIT and ships no engine. |
+| Applies to | every build from 2.0.0 onward |
 
-The licence change exists only on this branch. Merging it into `main` would
-move `main` to GPLv3, which is the repository owner's decision to make and has
-not been made here.
+The repository owner has decided to merge, so `main` is GPLv3 from 2.0.0
+onward. Version 1.4.0 remains the last engine-free MIT build and is kept in
+`release/` for anyone who wants Bight without the GPL obligation.
 
 ## Why GPLv3 rather than MIT plus a note
 
@@ -101,7 +101,11 @@ on the output.
 | `ENGINE_SOURCE.md` | Exactly which binary ships, and where its source is. |
 | `public/engine/COPYING-stockfish.txt` | GPLv3, copied next to the binary it covers. |
 
-`package.json` declares `"license": "GPL-3.0-or-later"` on this branch.
+`package.json` declares `"license": "GPL-3.0-or-later"`.
+
+`npm run verify:licenses` fails the build if the engine ships without any of
+these, or if `ENGINE_SOURCE.md` stops naming the exact binary and checksums
+that are actually bundled.
 
 ## Dual availability, stated precisely
 
@@ -112,10 +116,11 @@ Two things are true at once, and conflating them would be wrong:
    remains available under the MIT licence in `LICENSE-MIT`. Anyone who wants
    Bight without the engine can take it under MIT: remove `public/engine`,
    `src/services/engine` and the `blindfold-engine-game` mode, and no GPL
-   obligation attaches to what is left. `main` is exactly that.
+   obligation attaches to what is left. Version 1.4.0 is exactly that, and is
+   kept as `release/Bight-v1.4.0-MIT-blindfold.apk`.
 
-2. **The application distributed from this branch**, which contains Stockfish,
-   is offered as a whole under GPLv3.
+2. **The distributed application**, which contains Stockfish, is offered as a
+   whole under GPLv3.
 
 ## Source-code obligation
 
