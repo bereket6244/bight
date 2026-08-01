@@ -2,11 +2,69 @@
 
 All notable changes to Bight. Dates are the day the work landed.
 
-## 2.0.0 — 2026-07-31 (offline engine, on this branch only)
+## 2.1.0 — 2026-08-01 (blindfold repairs)
 
-**This section describes work on `feature/blindfold-stockfish-handoff`, not on
-`main`.** It bundles Stockfish, which changes the licence of the distributed
-application. `main` remains MIT and ships no engine.
+Repairs four failures reported from a real Android phone, plus six found while
+auditing the blindfold modes, plus release management.
+
+### Fixed
+
+- **Blindfold vs Computer was unplayable once the pieces disappeared.** The
+  board is the move-entry surface there, and `hidden` meant
+  `visibility: hidden` — the 64 buttons stayed in the layout but were invisible
+  and marked aria-hidden. The screen said "Your move" with nothing to press.
+  Board display is now explicit — `position`, `empty-input`, `collapsed` — and
+  the blindfold game keeps a visible, usable, accessible coordinate grid with
+  no pieces on it.
+- **Reconstruction reserved a board-sized blank gap** during hidden playback,
+  which the user had to scroll past to reach the palette. The board is now
+  removed from layout rather than blanked, and one line explains its absence.
+- **The computer replied too fast to perceive.** There is now a minimum
+  presentation interval that runs *concurrently* with the search, amber
+  last-move marks on origin and destination, and a "Computer played …" line.
+- **"Easy" played far too strongly.** Skill Level plus a shallow depth is not a
+  beginner model, and the bundled build's `UCI_Elo` floor is 1320 — already a
+  club player. Beginner and Easy now choose among MultiPV candidates with a
+  seeded, per-level weighted distribution. Every choice is a move Stockfish
+  evaluated, so a bad one is plausible rather than nonsense, and no level ever
+  declines a forced mate or walks into one.
+
+Also fixed: backgrounding no longer strands the game in "Computer thinking";
+unfinished games can be resumed; the move list is configurable (all / last /
+hidden / hidden-revealable) and no longer always visible; the progressive
+blindfold stage survives a session; the user's own move is spoken, not only the
+computer's; sound and haptics in the engine game follow the app preferences.
+
+### Changed
+
+- Difficulty labels are now Beginner / Easy / Intermediate / Strong. Stored
+  setting ids are unchanged, so saved settings and backups keep working.
+- Release artifacts carry version, licence and variant:
+  `Bight-v<version>-<licence>-<variant>.apk`. `release/Bight.apk` remains as a
+  byte-identical convenience copy. `Bight-engine.apk`, which duplicated it
+  exactly, has been removed.
+- `release/RELEASES.md` indexes every verified build. Each version was read out
+  of that APK's own manifest rather than assumed from its filename.
+- New guards, both in CI: `npm run verify:licenses` fails if the GPL paperwork
+  stops matching the shipped binary, and `npm run verify:release` fails if the
+  artifact naming, checksums or documents drift from the source version.
+
+### Notes
+
+- 982 tests, up from 875. Several weak tests were replaced along the way: one
+  asserted only that a CSS class existed, which is how a completely unusable
+  screen passed every check.
+- Two bugs in the test tooling were fixed rather than worked around: the
+  browser scripts leaked dev servers that held file locks and broke later
+  builds, and a fake engine advertised one move while returning another.
+- **Not yet run on Android hardware.** The device retest checklist is in
+  `BUILD_STATUS.md`.
+
+## 2.0.0 — 2026-07-31 (offline engine)
+
+**Superseded by 2.1.0**, which repairs four failures this build had on a real
+Android device. It bundles Stockfish, which changed the licence of the
+distributed application to GPL-3.0-or-later.
 
 A major version rather than a minor one, for three reasons that each stand on
 their own: it adds a chess engine, it grows the APK by 5.5 MB, and it changes
@@ -37,7 +95,7 @@ the licence the application is distributed under.
   code, written by a single copyright holder, remains available under MIT. No
   permissive dependency has been relicensed. See `GPL_COMPLIANCE.md`,
   `ENGINE_SOURCE.md` and `ENGINE_LICENSES.md`.
-- The APK grew from 54.31 MB to 59.76 MB.
+- The APK grew from 54.31 MB to 59.70 MB.
 
 ### Notes
 

@@ -10,7 +10,7 @@
  * Usage: node scripts/engine-difficulty-check.mjs
  */
 
-import { spawn } from 'node:child_process';
+import { startServer, waitForServer as awaitServer } from './devServer.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -26,11 +26,12 @@ try {
   process.exit(0);
 }
 
-const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], {
-  cwd: root,
-  shell: true,
-  stdio: 'ignore',
-});
+const server = startServer({ cwd: root, port: PORT, mode: 'preview' });
+
+if (!(await awaitServer(BASE))) {
+  console.error('preview server did not start');
+  process.exit(1);
+}
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 for (let i = 0; i < 120; i += 1) {
@@ -136,7 +137,7 @@ try {
   failures.push(`harness: ${error.message}`);
 } finally {
   await browser?.close();
-  server.kill();
+  server.stop();
 }
 
 console.log(`\n${failures.length} failure(s).`);

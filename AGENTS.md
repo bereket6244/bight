@@ -218,11 +218,13 @@ the sequence, never invent it; give it a `kind` string and a `KIND_LABELS`
 entry; balance the answer; add a test that re-derives the answer from an
 independent replay. Never assert against the generator's own bookkeeping.
 
-## The engine (this branch only)
+## The engine
 
 Full detail in `ENGINE_INTEGRATION.md`, licensing in `GPL_COMPLIANCE.md`.
 
-`main` has no engine and is MIT. This branch bundles Stockfish and is GPLv3.
+Bight bundles Stockfish and is distributed under GPL-3.0-or-later. Bight's own
+code remains available under MIT (`LICENSE-MIT`). Version 1.4.0 was the last
+engine-free MIT build and is kept in `release/`.
 
 ### Where it lives
 
@@ -268,7 +270,7 @@ including the handshake — through one queue.
   app is backgrounded.
 - **No analysis, evaluation, opening book or engine hints in the drills.**
 
-### If the engine ships
+### Engine obligations
 
 - The distributed application is **GPLv3**. `LICENSE` is GPLv3, `LICENSE-MIT`
   preserves the previous licence, and `package.json` says `GPL-3.0-or-later`.
@@ -292,19 +294,99 @@ descriptions contain no rating-shaped number.
 7 MB of WebAssembly loads acceptably in a real Android WebView is unmeasured.
 Do not describe it as verified on device without running it on one.
 
-## Workflow for a future agent
+## Definition of done (standing, for every task)
 
-1. Read `AGENTS.md`, `CODEX_HANDOFF.md`, `AUDIT_REPORT.md`, `TEST_REPORT.md`,
-   `BUILD_STATUS.md`, `CHANGELOG.md`.
-2. Reproduce the current behaviour — in a browser, or with a seeded test.
-3. Add a **failing** regression test first.
-4. Implement the smallest coherent fix.
-5. `npm run verify`, then `npm run test:browser` for anything visual.
-6. `npm run android:build` and `npm run inspect:apk` for anything that touches
-   Android.
-7. Update the docs and `CHANGELOG.md`.
-8. **Never claim hardware verification without evidence.** There is no device
-   or emulator on the build machine; say so plainly.
+This applies to **every** repository-changing task, without being asked. Do not
+wait for the user to say "handover", and do not write a new handoff document
+each pass — the living documents below already exist.
+
+1. Inspect the current repository and instructions before changing anything.
+2. Work on the intended branch. `main` is the branch unless told otherwise.
+3. Reproduce the problem first — in a browser with `?debug=1&seed=…`, or with a
+   seeded test. **Add a failing regression test before the fix.**
+4. Run the relevant verification (below).
+5. Build the APK for anything user-facing or Android-affecting, and inspect it.
+6. Bump the version when a release is produced, and use a versioned artifact
+   filename.
+7. Update `CHANGELOG.md` and `release/RELEASES.md`.
+8. Update the living documents when behaviour or architecture changes.
+9. Commit with a message that says what changed and why.
+10. **Push.** Then verify the remote commit is what you think it is.
+11. Report: branch, commit, tests, APK filename, checksum, and what is still
+    unverified.
+
+Standing rules:
+
+- Never finish with uncommitted changes unless genuinely blocked — say so if
+  you are.
+- Never claim completion before pushing, when push access exists. If a push
+  fails, report the exact error and leave a clean local commit.
+- Never overwrite the only copy of a previous release artifact.
+- Never let an unversioned APK be the sole authoritative release.
+- **Never describe something as verified on Android without running it on
+  Android.** Desktop Chromium is not a phone, and this project has already
+  shipped a build that passed every automated check and was unusable on a
+  device.
+
+### Living documents
+
+| File | Holds |
+| --- | --- |
+| `AGENTS.md` | permanent rules and workflow — this file |
+| `CODEX_HANDOFF.md` | current architecture, fragile areas, active state, open limitations. Update when those change; it is not an essay to rewrite each pass. |
+| `BUILD_STATUS.md` | facts about the latest build only |
+| `release/RELEASES.md` | the historical build index |
+| `CHANGELOG.md` | version history |
+| `BLINDFOLD_TRAINING.md`, `ENGINE_INTEGRATION.md`, `GPL_COMPLIANCE.md` | subsystem detail |
+
+### Verification commands
+
+```bash
+npm run verify            # engine assets, version sync, icons, lint, types, tests
+npm run test:browser      # layout, 4 viewports, real Chromium
+npm run test:layout       # blindfold layout: no hidden gaps, usable grid
+npm run test:blindfold    # every blindfold flow, completed in a browser
+npm run test:engine       # real Stockfish: smoke, a real game, difficulty
+npm run verify:licenses   # GPL paperwork matches the shipped binary
+npm run verify:release    # artifact naming, checksums, docs agree with source
+npm run release:android   # versioned APK + .sha256 + convenience copy
+npm run inspect:apk       # read the built APK's contents back
+```
+
+### Release artifact naming
+
+Every authoritative APK carries its version, licence and variant:
+
+    Bight-v<version>-<licence>-<variant>.apk
+
+`release/Bight.apk` is a convenience copy of the newest build, written
+byte-for-byte from the versioned file. `npm run verify:release` fails if they
+drift, if a duplicate binary appears under two names, or if the documents stop
+agreeing with the source version.
+
+### Board display semantics
+
+`Board` takes `displayMode`, never a `hidden` boolean:
+
+| Mode | Draws | Interactive | Layout space |
+| --- | --- | --- | --- |
+| `position` | pieces | yes | yes |
+| `empty-input` | grid + coordinate labels only | **yes** | yes |
+| `collapsed` | nothing | no | **none** |
+
+This distinction is not cosmetic. A single `hidden` boolean meaning
+`visibility: hidden` shipped two device-breaking bugs at once: it made the only
+move-entry surface in Blindfold vs Computer invisible while leaving its buttons
+in the DOM, and it reserved a board-sized blank gap in reconstruction. When
+adding a mode, choose deliberately:
+
+- The board is how the user answers → `position` or `empty-input`.
+- There is nothing to look at *and* nothing to tap → `collapsed`.
+
+On `empty-input`, nothing about the hidden position may leak: no pieces, no
+legal-destination marks (suppress them at the screen, not just in rendering),
+no piece names in square labels. Last-move marks are allowed — the user can
+already read the move in SAN.
 
 ## Prohibited regressions
 
@@ -316,6 +398,11 @@ Do not describe it as verified on device without running it on one.
 - network calls at runtime
 - committing `local.properties`, keystores, tokens or machine paths
 - lowering the mastery bar to make numbers look better
+- a `hidden` boolean on the board, or any state that hides an input surface
+  while leaving it in the DOM
+- reserving board-sized layout space for a board that is not drawn
+- an engine reply applied with no perceptible delay or last-move emphasis
+- claiming a difficulty level corresponds to any rating
 - folding blindfold results into square mastery
 - letting the engine decide what is legal, or letting a drill depend on it
 - loading engine assets for a non-engine mode

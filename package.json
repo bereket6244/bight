@@ -1,6 +1,6 @@
 {
   "name": "bight",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Bight - board sight. An offline chess coordinate and board-vision trainer.",
   "private": true,
   "type": "module",
@@ -25,8 +25,12 @@
     "inspect:apk": "node scripts/inspect-apk.mjs",
     "test:browser": "node scripts/browser-tests.mjs",
     "prepare:engine": "node scripts/prepare-engine.mjs",
-    "test:engine": "node scripts/engine-smoke.mjs && node scripts/engine-game-check.mjs",
-    "test:blindfold": "node scripts/blindfold-walkthrough.mjs"
+    "test:engine": "node scripts/engine-smoke.mjs && node scripts/engine-game-check.mjs && node scripts/engine-difficulty-check.mjs",
+    "test:blindfold": "node scripts/blindfold-walkthrough.mjs",
+    "release:android": "node scripts/release-android.mjs",
+    "verify:licenses": "node scripts/verify-licenses.mjs",
+    "test:layout": "node scripts/blindfold-layout-check.mjs",
+    "verify:release": "node scripts/verify-release-state.mjs"
   },
   "dependencies": {
     "@capacitor-community/sqlite": "^6.0.2",

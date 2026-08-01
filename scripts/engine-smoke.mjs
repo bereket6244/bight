@@ -13,7 +13,7 @@
  * Usage: node scripts/engine-smoke.mjs [--dist]
  */
 
-import { spawn } from 'node:child_process';
+import { startServer, waitForServer as awaitServer } from './devServer.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -30,24 +30,8 @@ try {
   process.exit(0);
 }
 
-const args = useDist
-  ? ['vite', 'preview', '--port', String(PORT), '--strictPort']
-  : ['vite', '--port', String(PORT), '--strictPort'];
+const server = startServer({ cwd: root, port: PORT, mode: 'preview' });
 
-const server = spawn('npx', args, { cwd: root, shell: true, stdio: 'ignore' });
-
-async function waitForServer(timeoutMs = 60000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      if ((await fetch(BASE)).ok) return true;
-    } catch {
-      /* not up yet */
-    }
-    await new Promise((r) => setTimeout(r, 400));
-  }
-  return false;
-}
 
 const results = [];
 const failures = [];
@@ -60,7 +44,7 @@ function assert(ok, label, detail = '') {
 
 let browser;
 try {
-  if (!(await waitForServer())) throw new Error('server did not start');
+  if (!(await awaitServer(BASE))) throw new Error('server did not start');
 
   browser = await puppeteer.launch({ args: ['--no-sandbox'] });
   const page = await browser.newPage();
@@ -180,7 +164,7 @@ try {
   assert(false, 'harness', error.message);
 } finally {
   await browser?.close();
-  server.kill();
+  server.stop();
 }
 
 console.log(`\n${results.length} checks, ${failures.length} failure(s).`);

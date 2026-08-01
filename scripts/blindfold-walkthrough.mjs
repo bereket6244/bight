@@ -14,7 +14,7 @@
  * Usage: node scripts/blindfold-walkthrough.mjs
  */
 
-import { spawn } from 'node:child_process';
+import { startServer, waitForServer as awaitServer } from './devServer.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -43,24 +43,8 @@ function fail(flow, detail) {
   console.log(`  FAIL  ${flow}\n        ${detail}`);
 }
 
-const server = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
-  cwd: root,
-  shell: true,
-  stdio: 'ignore',
-});
+const server = startServer({ cwd: root, port: PORT, mode: 'dev' });
 
-async function waitForServer(timeoutMs = 60000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      if ((await fetch(BASE)).ok) return true;
-    } catch {
-      /* not up yet */
-    }
-    await new Promise((r) => setTimeout(r, 400));
-  }
-  return false;
-}
 
 let browser;
 let page;
@@ -242,7 +226,7 @@ async function answerWrongly() {
  * ---------------------------------------------------------------- */
 
 try {
-  if (!(await waitForServer())) throw new Error('dev server did not start');
+  if (!(await awaitServer(BASE))) throw new Error('dev server did not start');
 
   browser = await puppeteer.launch({ args: ['--no-sandbox'] });
   page = await browser.newPage();
@@ -313,7 +297,7 @@ try {
   {
     const diag = await diagnostics();
     await playSequence();
-    const boardHidden = await exists('.board-wrap--hidden');
+    const boardHidden = !(await exists('[data-testid="board"]'));
     await answerCorrectly();
     record(
       'Intermediate tracking',
@@ -444,10 +428,10 @@ try {
     const visibleDuring = [];
     for (let i = 0; i < 20; i += 1) {
       if (!(await exists('[data-testid="blindfold-advance"]'))) break;
-      visibleDuring.push(!(await exists('.board-wrap--hidden')));
+      visibleDuring.push(await exists('[data-testid="board"]'));
       await click('[data-testid="blindfold-advance"]');
     }
-    const hiddenAfter = await exists('.board-wrap--hidden');
+    const hiddenAfter = !(await exists('[data-testid="board"]'));
     record(
       'Progressively hidden sequence',
       `${stage}; board drawn during ${visibleDuring.filter(Boolean).length}/${visibleDuring.length} ` +
@@ -563,7 +547,7 @@ try {
   fail('harness', error.message);
 } finally {
   await browser?.close();
-  server.kill();
+  server.stop();
 }
 
 console.log('\n─────────────────────────────────────────────');

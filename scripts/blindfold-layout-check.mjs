@@ -10,7 +10,7 @@
  * Usage: node scripts/blindfold-layout-check.mjs
  */
 
-import { spawn } from 'node:child_process';
+import { startServer, waitForServer as awaitServer } from './devServer.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -42,26 +42,10 @@ function assert(ok, label, detail = '') {
   console.log(`  ${ok ? 'pass' : 'FAIL'}  ${label}${detail ? `  (${detail})` : ''}`);
 }
 
-const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], {
-  cwd: root,
-  shell: true,
-  stdio: 'ignore',
-});
+const server = startServer({ cwd: root, port: PORT, mode: 'preview' });
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function waitForServer(timeoutMs = 60000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      if ((await fetch(BASE)).ok) return true;
-    } catch {
-      /* not up yet */
-    }
-    await wait(400);
-  }
-  return false;
-}
 
 let browser;
 let page;
@@ -118,7 +102,7 @@ const boardHeight = () =>
   });
 
 try {
-  if (!(await waitForServer())) throw new Error('preview server did not start');
+  if (!(await awaitServer(BASE))) throw new Error('preview server did not start');
 
   browser = await puppeteer.launch({ args: ['--no-sandbox'] });
   page = await browser.newPage();
@@ -229,7 +213,7 @@ try {
   assert(false, 'harness', error.message);
 } finally {
   await browser?.close();
-  server.kill();
+  server.stop();
 }
 
 console.log(`\n${results.length} checks, ${failures.length} failure(s).`);

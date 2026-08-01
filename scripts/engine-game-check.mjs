@@ -9,11 +9,19 @@
  *
  * Usage: node scripts/engine-game-check.mjs
  */
-import { spawn } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { startServer, waitForServer as awaitServer } from './devServer.mjs';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = 5195, BASE = `http://localhost:${PORT}`;
 const puppeteer = (await import('puppeteer')).default;
-const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'],
-  { cwd: process.cwd(), shell: true, stdio: 'ignore' });
+const server = startServer({ cwd: root, port: PORT, mode: 'preview' });
+
+if (!(await awaitServer(BASE))) {
+  console.error('preview server did not start');
+  process.exit(1);
+}
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 for (let i = 0; i < 120; i++) {
   try {
@@ -47,6 +55,9 @@ try {
   await page.waitForSelector('[data-testid="engine-setup"]', { timeout: 20000 });
   await click('[data-testid="engine-difficulty-very-easy"]');
   await click('[data-testid="engine-visibility-always"]');
+  // The move list defaults to the latest move only; this check reads the whole
+  // score sheet, so it opts into it.
+  await click('[data-testid="engine-history-full"]');
   await click('[data-testid="engine-start"]');
   await page.waitForSelector('[data-testid="engine-game"]', { timeout: 60000 });
 
@@ -82,5 +93,5 @@ try {
   process.exitCode = 1;
 } finally {
   await browser.close();
-  server.kill();
+  server.stop();
 }

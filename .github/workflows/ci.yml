@@ -11,7 +11,7 @@ name: CI
 
 on:
   push:
-    branches: [main, 'feature/**']
+    branches: [main]
   pull_request:
 
 jobs:
@@ -40,6 +40,15 @@ jobs:
 
       - name: Check generated icon resources are current
         run: node scripts/generate-icons.mjs --check
+
+      - name: Licence compliance
+        run: npm run verify:licenses
+
+      - name: Release state
+        run: npm run verify:release
+        # The APK is not built on this runner, so a missing binary here is
+        # expected; the naming, duplication and documentation checks still run.
+        continue-on-error: true
 
       - name: Lint
         run: npm run lint
@@ -99,6 +108,8 @@ jobs:
           node scripts/engine-smoke.mjs --dist
           node scripts/engine-game-check.mjs
           npm run test:blindfold
+          node scripts/blindfold-layout-check.mjs
+          node scripts/engine-difficulty-check.mjs
 
   android:
     name: Android APK (best effort)

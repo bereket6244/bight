@@ -14,7 +14,7 @@
  * Usage: npm run test:browser
  */
 
-import { spawn } from 'node:child_process';
+import { startServer, waitForServer as awaitServer } from './devServer.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -47,29 +47,12 @@ function assert(condition, label, detail = '') {
 }
 
 console.log('Starting dev server…');
-const server = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
-  cwd: root,
-  shell: true,
-  stdio: 'ignore',
-});
+const server = startServer({ cwd: root, port: PORT, mode: 'dev' });
 
-async function waitForServer(timeoutMs = 60000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(BASE);
-      if (response.ok) return true;
-    } catch {
-      // Not up yet.
-    }
-    await new Promise((r) => setTimeout(r, 400));
-  }
-  return false;
-}
 
 let browser;
 try {
-  if (!(await waitForServer())) throw new Error('dev server did not start');
+  if (!(await awaitServer(BASE))) throw new Error('dev server did not start');
 
   browser = await puppeteer.launch({ args: ['--no-sandbox'] });
   const page = await browser.newPage();
@@ -299,7 +282,7 @@ try {
   failures.push(`harness error: ${error.message}`);
 } finally {
   await browser?.close();
-  server.kill();
+  server.stop();
 }
 
 console.log('\nReal-browser layout results\n');
