@@ -32,6 +32,11 @@ export const SEARCH_GRACE_MS = 10_000;
 /** Longest wait for a bare `isready`. */
 export const READY_TIMEOUT_MS = 15_000;
 
+/**
+ * @deprecated Superseded by `WEAK_PLAY_POLICY` in weakPlay.ts, which owns
+ * search limits, Skill Level and the weak-move policy together. Kept only so
+ * an external importer does not break; nothing in the app reads it.
+ */
 export interface DifficultySettings {
   label: string;
   /** One line describing how it plays, in behaviour rather than in rating. */

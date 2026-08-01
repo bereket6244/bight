@@ -11,14 +11,22 @@
  */
 
 import {
-  DIFFICULTY_SETTINGS,
   ENGINE_WORKER_PATH,
   HANDSHAKE_TIMEOUT_MS,
   READY_TIMEOUT_MS,
   SEARCH_GRACE_MS,
 } from './engineConfig';
 import { EngineWorkerClient } from './EngineWorkerClient';
-import { goCommand, parseBestMove, parseIdName, positionCommand, setOptionCommand } from './UciParser';
+import {
+  goCommand,
+  parseBestMove,
+  parseIdName,
+  parseInfo,
+  positionCommand,
+  setOptionCommand,
+  type UciInfo,
+} from './UciParser';
+import { chooseCandidate, collectCandidates, WEAK_PLAY_POLICY } from './weakPlay';
 import type {
   EngineDifficulty,
   EngineError,
@@ -32,6 +40,11 @@ export interface StockfishOptions {
   workerPath?: string;
   createWorker?: (url: string) => Worker;
   now?: () => number;
+  /**
+   * Randomness for the weak-play selection. Seeded in tests, so a level's
+   * behaviour can be asserted rather than described.
+   */
+  random?: () => number;
 }
 
 export class StockfishEngineService implements EngineService {
@@ -39,6 +52,7 @@ export class StockfishEngineService implements EngineService {
   private status: EngineStatus = { state: 'idle', name: null, bootMs: null, error: null };
   private readonly options: StockfishOptions;
   private readonly now: () => number;
+  private readonly random: () => number;
 
   /** Serialises every exchange, so only one is ever outstanding. */
   private queue: Promise<unknown> = Promise.resolve();
@@ -49,6 +63,7 @@ export class StockfishEngineService implements EngineService {
   constructor(options: StockfishOptions = {}) {
     this.options = options;
     this.now = options.now ?? (() => Date.now());
+    this.random = options.random ?? Math.random;
   }
 
   getStatus(): EngineStatus {
@@ -167,13 +182,25 @@ export class StockfishEngineService implements EngineService {
   async chooseMove(options: EngineMoveOptions): Promise<EngineMove> {
     return this.serialise(async () => {
       const client = this.requireClient();
-      const settings = DIFFICULTY_SETTINGS[this.difficulty];
-      const movetimeMs = options.movetimeMs ?? settings.movetimeMs;
-      const depth = options.depth ?? settings.depth;
+      const policy = WEAK_PLAY_POLICY[this.difficulty];
+      const movetimeMs = options.movetimeMs ?? policy.movetimeMs;
+      const depth = options.depth ?? policy.depth;
       const timeoutMs = options.timeoutMs ?? movetimeMs + SEARCH_GRACE_MS;
 
       this.status = { ...this.status, state: 'searching' };
       const started = this.now();
+
+      /*
+       * Every `info` line of this search, so a weakened level can choose among
+       * the candidates rather than always taking the best. Collected during
+       * the search because UCI streams them; there is no way to ask for them
+       * afterwards.
+       */
+      const infos: UciInfo[] = [];
+      const stopCollecting = client.onLine((line) => {
+        const info = parseInfo(line);
+        if (info !== null) infos.push(info);
+      });
 
       try {
         client.send(positionCommand(options.fen, options.moves ?? []));
@@ -192,11 +219,32 @@ export class StockfishEngineService implements EngineService {
         }
 
         this.status = { ...this.status, state: 'ready' };
+
+        /*
+         * The weak levels play one of the candidates the engine reported. If
+         * the candidate list could not be read for any reason, the engine's
+         * own best move is used — a level that is too strong is a much smaller
+         * failure than one that plays nonsense.
+         */
+        if (policy.multiPv > 1) {
+          const chosen = chooseCandidate(
+            collectCandidates(infos),
+            this.difficulty,
+            this.random,
+          );
+          if (chosen !== null && chosen.uci !== move.uci) {
+            const weakened = parseBestMove(`bestmove ${chosen.uci}`, move.elapsedMs);
+            if (weakened !== null) return weakened;
+          }
+        }
+
+        stopCollecting();
         return move;
       } catch (error) {
         // A search that timed out leaves the engine thinking. Stop it, so the
         // next request is not answered by this one's leftovers.
         this.status = { ...this.status, state: 'ready' };
+        stopCollecting();
         client.abandon();
         try {
           client.send('stop');
@@ -238,8 +286,11 @@ export class StockfishEngineService implements EngineService {
 
   private async applyDifficulty(level: EngineDifficulty): Promise<void> {
     const client = this.requireClient();
-    const settings = DIFFICULTY_SETTINGS[level];
-    client.send(setOptionCommand('Skill Level', settings.skill));
+    const policy = WEAK_PLAY_POLICY[level];
+    client.send(setOptionCommand('Skill Level', policy.skill));
+    // MultiPV is what makes a weak level possible: without alternatives to
+    // choose from there is nothing to be weak with.
+    client.send(setOptionCommand('MultiPV', policy.multiPv));
     await client.request(
       'isready',
       (line) => line.trim() === 'readyok',

@@ -28,10 +28,10 @@ import {
 } from '../../core/engineGame/game';
 import {
   DIFFICULTY_ORDER,
-  DIFFICULTY_SETTINGS,
   engineSupported,
   getEngine,
   releaseEngine,
+  WEAK_PLAY_POLICY,
   type EngineDifficulty,
 } from '../../services/engine';
 import type { PieceColor, PieceType, SquareName } from '../../core/chess/types';
@@ -387,13 +387,13 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
           value={difficulty}
           options={DIFFICULTY_ORDER.map((id) => ({
             value: id,
-            label: DIFFICULTY_SETTINGS[id].label,
+            label: WEAK_PLAY_POLICY[id].label,
           }))}
           onChange={setDifficulty}
           testId="engine-difficulty"
         />
         <p className="card__subtitle" data-testid="engine-difficulty-detail">
-          {DIFFICULTY_SETTINGS[difficulty].detail}
+          {WEAK_PLAY_POLICY[difficulty].detail}
         </p>
 
         <Choice
@@ -480,7 +480,7 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
         <div>
           <strong>Blindfold vs Computer</strong>
           <div className="session-bar__meta">
-            {DIFFICULTY_SETTINGS[difficulty].label} · you are{' '}
+            {WEAK_PLAY_POLICY[difficulty].label} · you are{' '}
             {game.userSide === 'white' ? 'White' : 'Black'}
             {engineName === null ? '' : ` · ${engineName}`}
           </div>

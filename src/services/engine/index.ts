@@ -26,6 +26,15 @@ export {
   ENGINE_WORKER_PATH,
 } from './engineConfig';
 
+export {
+  chooseCandidate,
+  collectCandidates,
+  scoreOf,
+  WEAK_PLAY_POLICY,
+  type Candidate,
+  type Selection,
+  type WeakPlayPolicy,
+} from './weakPlay';
 export { StockfishEngineService } from './StockfishEngineService';
 export { EngineWorkerClient } from './EngineWorkerClient';
 export {
