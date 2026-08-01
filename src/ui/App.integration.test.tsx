@@ -16,6 +16,8 @@ import { SessionScreen } from './screens/SessionScreen';
 import { questionModeVariants } from '../core/training/registry';
 import { defaultSettings } from '../core/session/settings';
 import type { SessionSettings } from '../core/session/settings';
+import { squareColor } from '../core/chess/square';
+import type { SquareName } from '../core/chess/types';
 
 function renderApp() {
   return render(
@@ -384,14 +386,17 @@ describe('square colour mode', () => {
     expect(screen.getByTestId('choice-light')).toBeInTheDocument();
     expect(screen.getByTestId('choice-dark')).toBeInTheDocument();
 
-    const first = currentPromptCoordinate();
-    // One of the two must be right; try light, then dark if it flashed.
-    await user.click(screen.getByTestId('choice-light'));
-    if (currentPromptCoordinate() === first) {
-      await user.click(screen.getByTestId('choice-dark'));
-    }
+    // Advancing is measured by the completed count, not by the coordinate
+    // changing: two consecutive questions may legitimately name the same
+    // square, and reading that as "did not advance" failed roughly one run in
+    // sixty-four. The right answer is computed from the square rather than
+    // guessed, so there is no retry to get wrong either.
+    expect(sessionProgressText()).toBe('0 / 10');
 
-    await waitFor(() => expect(currentPromptCoordinate()).not.toBe(first));
+    const square = currentPromptCoordinate() as SquareName;
+    await user.click(screen.getByTestId(`choice-${squareColor(square)}`));
+
+    await waitFor(() => expect(sessionProgressText()).toBe('1 / 10'));
     expect(screen.queryByTestId('feedback')).not.toBeInTheDocument();
   });
 
@@ -402,11 +407,14 @@ describe('square colour mode', () => {
     await screen.findByTestId('session-screen');
     const first = currentPromptCoordinate();
 
-    await user.click(screen.getByTestId('choice-light'));
-    if (currentPromptCoordinate() !== first) return; // light happened to be right
+    // Deliberately click the wrong colour. The previous version clicked light
+    // and returned early if that happened to be right, so half its runs
+    // asserted nothing at all.
+    const wrong = squareColor(first as SquareName) === 'light' ? 'dark' : 'light';
+    await user.click(screen.getByTestId(`choice-${wrong}`));
 
     await waitFor(() =>
-      expect(screen.getByTestId('choice-light').className).toContain('answer-button--wrong'),
+      expect(screen.getByTestId(`choice-${wrong}`).className).toContain('answer-button--wrong'),
     );
     expect(currentPromptCoordinate()).toBe(first);
   });
