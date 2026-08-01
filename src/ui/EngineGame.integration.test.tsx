@@ -185,7 +185,7 @@ describe('playing a game', () => {
     await waitFor(() => expect(screen.getByTestId('engine-last-move')).toHaveTextContent('e5'));
   });
 
-  it('hides the board once the opening plies are past', async () => {
+  it('takes the pieces away without taking the move input away', async () => {
     const user = userEvent.setup();
     await renderGame(fakeEngine({ moves: ['e7e5'] }));
 
@@ -193,7 +193,15 @@ describe('playing a game', () => {
     await user.click(screen.getByTestId('engine-start'));
     await screen.findByTestId('engine-game');
 
-    expect(document.querySelector('.board-wrap--hidden')).not.toBeNull();
+    /*
+     * This test used to assert only that `.board-wrap--hidden` existed, which
+     * is the *bug* rather than the behaviour: that class made the board
+     * invisible while leaving its 64 buttons in place, so the screen said
+     * "Your move" with nothing to press. It now asserts what the user needs.
+     */
+    expect(screen.getByTestId('board')).toHaveAttribute('data-display-mode', 'empty-input');
+    expect(document.querySelectorAll('.square svg')).toHaveLength(0);
+    expect(screen.getAllByRole('gridcell')).toHaveLength(64);
   });
 
   it('reports captured material', async () => {
@@ -313,5 +321,163 @@ describe('failure recovery and background behaviour', () => {
     document.dispatchEvent(new Event('visibilitychange'));
 
     await waitFor(() => expect(engine.calls).toContain('stop'));
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Playing while actually blindfolded
+ *
+ * Reported from a real Android device: once the pieces disappear the screen
+ * says "Your move" but there is no way to enter one. These tests play a real
+ * game with the board hidden, which is the only way to catch that.
+ * ------------------------------------------------------------------ */
+
+/** Square controls the user can actually see and press. */
+function usableSquares(): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>('[data-testid^="square-"]')].filter(
+    (square) => {
+      if (square.closest('[aria-hidden="true"]') !== null) return false;
+      if ((square as HTMLButtonElement).disabled) return true;
+      const style = window.getComputedStyle(square);
+      return style.visibility !== 'hidden' && style.display !== 'none';
+    },
+  );
+}
+
+function pieceCount(): number {
+  return document.querySelectorAll('.square svg').length;
+}
+
+describe('playing with the board hidden', () => {
+  it('still offers 64 usable squares once the pieces are gone', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine({ moves: ['e7e5'] }));
+
+    await user.click(screen.getByTestId('engine-visibility-never'));
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+
+    // No pieces — that is the point of the mode.
+    expect(pieceCount()).toBe(0);
+    // But the grid the user types moves on must still be there and usable.
+    expect(usableSquares()).toHaveLength(64);
+  });
+
+  it('lets the user play a hidden move and get a reply', async () => {
+    const user = userEvent.setup();
+    const engine = fakeEngine({ moves: ['e7e5'] });
+    await renderGame(engine);
+
+    await user.click(screen.getByTestId('engine-visibility-never'));
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+
+    await tapMove(user, 'e2', 'e4');
+
+    await waitFor(() => expect(screen.getByTestId('engine-moves')).toHaveTextContent('1. e4 e5'));
+    expect(engine.calls).toContain('chooseMove');
+    await waitFor(() => expect(screen.getByTestId('engine-turn')).toHaveTextContent('Your move'));
+  });
+
+  it('lets the user play a second hidden move', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine({ moves: ['e7e5', 'b8c6'] }));
+
+    await user.click(screen.getByTestId('engine-visibility-never'));
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+
+    await tapMove(user, 'e2', 'e4');
+    await waitFor(() => expect(screen.getByTestId('engine-turn')).toHaveTextContent('Your move'));
+
+    await tapMove(user, 'g1', 'f3');
+    await waitFor(() => expect(screen.getByTestId('engine-moves')).toHaveTextContent('2. Nf3'));
+  });
+
+  it('works as Black, after the engine has opened', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine({ moves: ['d2d4', 'c2c4'] }));
+
+    await user.click(screen.getByTestId('engine-side-black'));
+    await user.click(screen.getByTestId('engine-visibility-never'));
+    await user.click(screen.getByTestId('engine-start'));
+
+    await waitFor(() => expect(screen.getByTestId('engine-moves')).toHaveTextContent('1. d4'));
+    expect(usableSquares()).toHaveLength(64);
+
+    await tapMove(user, 'd7', 'd5');
+    await waitFor(() => expect(screen.getByTestId('engine-moves')).toHaveTextContent('d5'));
+  });
+
+  it('stays usable after the first-six-plies cutoff hides the board', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine({ moves: ['e7e5', 'b8c6', 'g8f6'] }));
+
+    await user.click(screen.getByTestId('engine-visibility-first-moves'));
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+
+    await tapMove(user, 'e2', 'e4');
+    await waitFor(() => expect(screen.getByTestId('engine-turn')).toHaveTextContent('Your move'));
+    await tapMove(user, 'g1', 'f3');
+    await waitFor(() => expect(screen.getByTestId('engine-turn')).toHaveTextContent('Your move'));
+    await tapMove(user, 'f1', 'c4');
+    await waitFor(() => expect(screen.getByTestId('engine-moves')).toHaveTextContent('Bc4'));
+
+    // Six plies played: the board is gone, and the grid must remain.
+    await waitFor(() => expect(pieceCount()).toBe(0));
+    expect(usableSquares()).toHaveLength(64);
+  });
+
+  it('recovers from an illegal hidden move', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine({ moves: ['e7e5'] }));
+
+    await user.click(screen.getByTestId('engine-visibility-never'));
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+
+    await tapMove(user, 'e2', 'e5');
+    expect(screen.getByTestId('engine-moves').textContent?.trim()).toBe('');
+    expect(screen.getByTestId('engine-turn')).toHaveTextContent('Your move');
+
+    // Still playable afterwards.
+    await tapMove(user, 'e2', 'e4');
+    await waitFor(() => expect(screen.getByTestId('engine-moves')).toHaveTextContent('1. e4'));
+  });
+
+  it('leaks nothing about the hidden position', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine());
+
+    await user.click(screen.getByTestId('engine-visibility-never'));
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+
+    // Square labels must not name the piece standing there.
+    for (const square of usableSquares()) {
+      const label = square.getAttribute('aria-label') ?? '';
+      expect(label, label).not.toMatch(/pawn|knight|bishop|rook|queen|king/i);
+    }
+
+    // Selecting an origin must not light up its legal destinations.
+    await user.click(screen.getByTestId('square-e2'));
+    expect(document.querySelectorAll('.square--hint')).toHaveLength(0);
+    expect(document.querySelectorAll('.hint-dot')).toHaveLength(0);
+  });
+
+  it('marks the selected origin, and cancels when tapped again', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine());
+
+    await user.click(screen.getByTestId('engine-visibility-never'));
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+
+    await user.click(screen.getByTestId('square-e2'));
+    expect(document.querySelectorAll('.square--origin')).toHaveLength(1);
+
+    await user.click(screen.getByTestId('square-e2'));
+    expect(document.querySelectorAll('.square--origin')).toHaveLength(0);
   });
 });

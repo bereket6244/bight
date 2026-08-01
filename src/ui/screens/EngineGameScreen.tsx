@@ -354,16 +354,35 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
     (visibility === 'first-moves' && game.history.length < 6) ||
     game.result.kind !== 'in-progress';
 
+  const lastMove = game.history[game.history.length - 1];
+
   const marks = new Map<SquareName, SquareMark>();
+
+  /*
+   * The last move, always — on a hidden board these marks are the only visual
+   * sign that anything happened, and they give nothing away: the user can
+   * already read the move in SAN.
+   */
+  if (lastMove !== undefined) {
+    marks.set(lastMove.uci.slice(0, 2) as SquareName, 'last-from');
+    marks.set(lastMove.uci.slice(2, 4) as SquareName, 'last-to');
+  }
+
   if (origin !== null) {
     marks.set(origin, 'origin');
-    for (const square of legalDestinations(game, origin)) marks.set(square, 'hint');
+    /*
+     * Legal destinations are shown only when the pieces are. On a hidden
+     * board they would hand over the position one tap at a time — select a
+     * square, read off what stands there from where it may go.
+     */
+    if (boardVisible) {
+      for (const square of legalDestinations(game, origin)) marks.set(square, 'hint');
+    }
   }
   if (game.rejection !== null) {
     marks.set(game.rejection.slice(2, 4) as SquareName, 'wrong');
   }
 
-  const lastMove = game.history[game.history.length - 1];
   const userCaptures = capturedBy(game.history, game.userSide);
   const engineCaptures = capturedBy(game.history, game.userSide === 'white' ? 'black' : 'white');
 
@@ -465,7 +484,7 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
         orientation={game.userSide}
         labels="always"
         marks={marks}
-        hidden={!boardVisible}
+        displayMode={boardVisible ? 'position' : 'empty-input'}
         onSquareTap={tapSquare}
       />
 

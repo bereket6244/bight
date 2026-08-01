@@ -527,7 +527,22 @@ describe('board settings reach the board', () => {
     // Blindfold practice is a setting now, not a separate mode card.
     renderSession({ modeId: 'square-to-coordinate', variantId: 'standard', hideBoard: true });
     await screen.findByTestId('session-screen');
+
+    // The board is removed rather than blanked, so it reserves no space, and
+    // one line explains its absence. The keypad is still how this mode is
+    // answered, so nothing about the interaction changes.
+    expect(screen.queryByTestId('board')).not.toBeInTheDocument();
     expect(screen.getByText(/answer from memory/i)).toBeInTheDocument();
+    expect(screen.getByTestId('keypad')).toBeInTheDocument();
+  });
+
+  it('leaves no board-sized gap behind a hidden board', async () => {
+    renderSession({ modeId: 'square-to-coordinate', variantId: 'standard', hideBoard: true });
+    await screen.findByTestId('session-screen');
+
+    // Nothing is left in the tree that could reserve the board's 1:1 space.
+    expect(document.querySelectorAll('.board-wrap')).toHaveLength(0);
+    expect(document.querySelectorAll('.square')).toHaveLength(0);
   });
 });
 

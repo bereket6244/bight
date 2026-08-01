@@ -35,6 +35,9 @@
   --text: #eef1f5;
   --text-muted: #a2abb8;
   --accent: #79a05e;
+  /* Last-move emphasis. Amber, so it cannot be confused with the green
+     selection marks or the red wrong-answer flash. */
+  --last-move: #d8a13a;
   --accent-strong: #8fbb6c;
   --accent-text: #0e1108;
   --danger: #e0554e;
@@ -65,6 +68,7 @@
   --text: #14171c;
   --text-muted: #5c6675;
   --accent: #5b7f42;
+  --last-move: #b8791a;
   --accent-strong: #4a6b35;
   --accent-text: #ffffff;
   --mark-hint: rgba(20, 20, 20, 0.22);
@@ -155,8 +159,27 @@ body {
   touch-action: manipulation;
 }
 
-.board-wrap--hidden .board {
-  visibility: hidden;
+/*
+ * An empty-input board: the grid and its coordinate labels stay, the pieces
+ * do not. It must never use visibility:hidden — that kept the squares in
+ * layout but made the only move-entry surface invisible, which shipped a
+ * blindfold game nobody could play.
+ */
+.board-wrap--empty .square {
+  /* Slightly flatter, so it reads as a coordinate grid rather than a board
+     someone forgot to draw the pieces on. */
+  opacity: 0.92;
+}
+
+.board-collapsed-note {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  /* A single line where a whole board used to be reserved. */
+  margin: var(--gap) 0 0;
+  padding: var(--gap) 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
 }
 
 .board-hidden-note {
@@ -1183,4 +1206,28 @@ input.field__control {
   border-radius: var(--radius-sm);
   background: var(--surface-sunken);
   border-left: 3px solid var(--accent);
+}
+
+/*
+ * Last-move marks.
+ *
+ * Deliberately distinct from `selected`, `origin`, `wrong` and the hint dot:
+ * on a hidden board these are the only visual record that anything happened,
+ * so they must not be mistakable for the square the user is currently
+ * choosing. Paired with "Computer played …" text, so the information is never
+ * carried by colour alone.
+ */
+.square--last-from {
+  box-shadow: inset 0 0 0 4px var(--last-move);
+}
+
+.square--last-to {
+  box-shadow: inset 0 0 0 4px var(--last-move);
+  background-image: radial-gradient(circle at center, var(--last-move) 18%, transparent 19%);
+}
+
+.board-wrap--empty .square--last-from,
+.board-wrap--empty .square--last-to {
+  /* On the empty grid these carry the whole story, so they are stronger. */
+  box-shadow: inset 0 0 0 5px var(--last-move);
 }

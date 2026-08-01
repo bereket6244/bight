@@ -11,7 +11,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Board, type SquareMark } from '../components/Board';
+import { Board, type BoardDisplayMode, type SquareMark } from '../components/Board';
 import { ChoiceButtons, ColorChoice, CoordinateKeypad } from '../components/CoordinateKeypad';
 import {
   BlindfoldSequenceView,
@@ -388,13 +388,27 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
         ? (placementFen ?? EMPTY_PLACEMENT)
         : (playback.boardFen ?? fallbackFen);
 
-  // Outside the schedule's reveal windows there is simply nothing to look at.
-  const boardHidden =
+  /*
+   * Outside the schedule's reveal windows there is nothing to look at and
+   * nothing to tap, so the board is **collapsed** rather than hidden — it
+   * used to stay in layout as a board-sized blank square the user had to
+   * scroll past to reach the reconstruction palette.
+   *
+   * No session question is answered by tapping an invisible board: the modes
+   * that hide it (square colour, alignment, square-to-coordinate) are all
+   * answered by a keypad or choice buttons, and reconstruction gets its board
+   * back the moment playback finishes.
+   */
+  const boardDisplay: BoardDisplayMode =
     blindfold === undefined
-      ? (question?.board.hidden ?? false)
+      ? question?.board.hidden === true
+        ? 'collapsed'
+        : 'position'
       : answeringPlacement && playback.finished
-        ? false
-        : playback.boardFen === null;
+        ? 'position'
+        : playback.boardFen === null
+          ? 'collapsed'
+          : 'position';
 
   const hintsOffered =
     settings.allowHints &&
@@ -514,6 +528,17 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
             />
           ) : null}
 
+          {/* The board is gone rather than blanked, so the reason for its
+              absence is stated here instead — one line, not a board-sized
+              hole in the layout. */}
+          {boardDisplay === 'collapsed' ? (
+            <p className="board-collapsed-note" data-testid="board-collapsed-note">
+              {blindfold === undefined
+                ? 'Board hidden — answer from memory'
+                : 'Board hidden — follow the moves'}
+            </p>
+          ) : null}
+
           {question !== null ? (
             <Board
               key={question.id}
@@ -522,7 +547,7 @@ export function SessionScreen({ settings, onExit }: SessionScreenProps) {
               labels={question.board.labels}
               marks={marks}
               badges={badges}
-              hidden={boardHidden}
+              displayMode={boardDisplay}
               revealMs={question.board.revealMs}
               decorativePieces={question.board.decorativePieces ?? false}
               movableSquares={question.expected.kind === 'move' ? [question.expected.from] : []}

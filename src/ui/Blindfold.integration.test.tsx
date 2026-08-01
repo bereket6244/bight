@@ -111,7 +111,11 @@ describe('blindfold tracking', () => {
     expect(piecesOnBoard().length).toBeGreaterThan(20);
 
     await user.click(screen.getByTestId('blindfold-advance'));
-    await waitFor(() => expect(document.querySelector('.board-wrap--hidden')).not.toBeNull());
+    // Removed from the layout, not blanked: a hidden-but-present board left a
+    // board-sized gap the user had to scroll past to reach the controls.
+    await waitFor(() => expect(screen.queryByTestId('board')).not.toBeInTheDocument());
+    expect(document.querySelectorAll('.board-wrap')).toHaveLength(0);
+    expect(screen.getByTestId('board-collapsed-note')).toBeInTheDocument();
   });
 
   it('never draws the board at all on the last stage', async () => {
@@ -120,10 +124,11 @@ describe('blindfold tracking', () => {
 
     await screen.findByTestId('blindfold-sequence');
     expect(screen.getByText('No board')).toBeInTheDocument();
-    expect(document.querySelector('.board-wrap--hidden')).not.toBeNull();
+    expect(screen.queryByTestId('board')).not.toBeInTheDocument();
 
     await playWholeSequence(user);
-    expect(document.querySelector('.board-wrap--hidden')).not.toBeNull();
+    expect(screen.queryByTestId('board')).not.toBeInTheDocument();
+    expect(document.querySelectorAll('.board-wrap')).toHaveLength(0);
   });
 
   it('keeps the board hidden once the sequence is over, whatever the stage', async () => {
@@ -134,8 +139,10 @@ describe('blindfold tracking', () => {
     await screen.findByTestId('blindfold-advance');
     await playWholeSequence(user);
 
-    // The position the moves produced is the answer, so it is never drawn.
-    expect(document.querySelector('.board-wrap--hidden')).not.toBeNull();
+    // The position the moves produced is the answer, so it is never drawn —
+    // and the board takes no layout space while it is not being drawn.
+    expect(screen.queryByTestId('board')).not.toBeInTheDocument();
+    expect(document.querySelectorAll('.square')).toHaveLength(0);
   });
 
   it('offers the move list as a hint, and only when it was hidden', async () => {
@@ -261,5 +268,90 @@ describe('progressive blindfold', () => {
 
     await playWholeSequence(user);
     expect(screen.getByTestId('blindfold-progress')).toHaveTextContent('Sequence complete');
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Reconstruction layout
+ *
+ * Reported from a real Android device: during hidden playback a large blank
+ * square sat in the middle of the screen and the palette was below it, so the
+ * user had to scroll through empty space to reach the controls.
+ * ------------------------------------------------------------------ */
+describe('reconstruction layout while the board is hidden', () => {
+  it('reserves no board-sized space during hidden playback', async () => {
+    const user = userEvent.setup();
+    renderBlindfold('blindfold-reconstruction', 'partial', { boardVisibility: 'never' });
+
+    await screen.findByTestId('blindfold-advance');
+
+    // Nothing board-shaped is in the tree at all while the moves play out.
+    expect(screen.queryByTestId('board')).not.toBeInTheDocument();
+    expect(document.querySelectorAll('.board-wrap')).toHaveLength(0);
+    expect(document.querySelectorAll('.square')).toHaveLength(0);
+
+    // And the user is told why, in one line.
+    expect(screen.getByTestId('board-collapsed-note')).toHaveTextContent(/follow the moves/i);
+    await user.click(screen.getByTestId('blindfold-advance'));
+    expect(document.querySelectorAll('.square')).toHaveLength(0);
+  });
+
+  it('keeps the playback controls reachable while the board is gone', async () => {
+    const user = userEvent.setup();
+    renderBlindfold('blindfold-reconstruction', 'partial', { boardVisibility: 'never' });
+
+    // The advance control is what drives the sequence; it must be present and
+    // usable throughout, not stranded below a blank board.
+    await screen.findByTestId('blindfold-advance');
+    await user.click(screen.getByTestId('blindfold-advance'));
+    expect(screen.getByTestId('blindfold-progress')).toHaveTextContent('Move 1 of');
+    expect(screen.getByTestId('blindfold-sequence')).toBeInTheDocument();
+  });
+
+  it('brings the board back with the palette right after it, once answering starts', async () => {
+    const user = userEvent.setup();
+    renderBlindfold('blindfold-reconstruction', 'partial', { boardVisibility: 'never' });
+
+    await screen.findByTestId('blindfold-advance');
+    await playWholeSequence(user);
+
+    const board = await screen.findByTestId('board');
+    const palette = await screen.findByTestId('piece-palette');
+
+    // Both present, and the palette is the board's next sibling in document
+    // order — nothing sits between them.
+    expect(board).toBeInTheDocument();
+    expect(palette).toBeInTheDocument();
+    expect(
+      board.compareDocumentPosition(palette) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    const between = [...document.querySelectorAll('*')].filter(
+      (el) =>
+        (board.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 &&
+        (palette.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING) !== 0 &&
+        !board.contains(el) &&
+        !palette.contains(el),
+    );
+    expect(between, between.map((el) => el.className).join(', ')).toHaveLength(0);
+  });
+
+  it('does not offer the palette before there is anything to place', async () => {
+    renderBlindfold('blindfold-reconstruction', 'partial', { boardVisibility: 'never' });
+    await screen.findByTestId('blindfold-advance');
+    expect(screen.queryByTestId('piece-palette')).not.toBeInTheDocument();
+  });
+
+  it('can be completed end to end with the board hidden throughout playback', async () => {
+    const user = userEvent.setup();
+    renderBlindfold('blindfold-reconstruction', 'partial', { boardVisibility: 'never' });
+
+    await screen.findByTestId('blindfold-advance');
+    await playWholeSequence(user);
+    await screen.findByTestId('piece-palette');
+
+    // The answer board is a real, visible board with real squares to tap.
+    expect(screen.getByTestId('board')).toHaveAttribute('data-display-mode', 'position');
+    expect(screen.getAllByRole('gridcell')).toHaveLength(64);
   });
 });
