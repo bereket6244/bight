@@ -38,9 +38,23 @@ import type { PieceColor, PieceType, SquareName } from '../../core/chess/types';
 import { speak } from '../../services/speech';
 import { vibrate } from '../../services/haptics';
 import { playTone } from '../../services/sound';
+import { useApp } from '../state/AppContext';
 
 /** How long a rejected move stays red. */
 const FLASH_MS = 420;
+
+/**
+ * Shortest time the computer's turn is allowed to take, from the user's move
+ * to the reply appearing.
+ *
+ * This is not an artificial slowdown of the search: the wait runs alongside
+ * it, so a level that genuinely thinks for a second is unaffected and only an
+ * implausibly fast reply is held. It exists because a move that lands in 40 ms
+ * reads as nothing having happened at all — which is exactly what a real
+ * device reported. 800 ms is long enough to register a state change and short
+ * enough not to feel like waiting.
+ */
+export const MIN_THINKING_MS = 800;
 
 /** How much of the board the user gets during the game. */
 type GameVisibility = 'always' | 'first-moves' | 'never';
@@ -60,6 +74,8 @@ export interface EngineGameScreenProps {
 type Phase = 'setup' | 'playing' | 'over';
 
 export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGameScreenProps) {
+  // Sound and haptics follow the app-wide preferences, as in every other mode.
+  const { preferences } = useApp();
   const [phase, setPhase] = useState<Phase>('setup');
   const [side, setSide] = useState<PieceColor>('white');
   const [difficulty, setDifficulty] = useState<EngineDifficulty>('easy');
@@ -77,6 +93,10 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
   const [promotion, setPromotion] = useState<{ from: SquareName; to: SquareName } | null>(null);
 
   const engineRef = useRef<ReturnType<typeof getEngine> | null>(null);
+  /** Increments per computer turn, so a stale reply can be recognised. */
+  const turnToken = useRef(0);
+  /** The presentation delay in flight, cleared on unmount and on abandon. */
+  const thinkingTimer = useRef<number | null>(null);
   /** The live game, so callbacks can read it without depending on it. */
   const gameRef = useRef<EngineGameState | null>(null);
   gameRef.current = game;
@@ -124,6 +144,24 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
     return () => document.removeEventListener('visibilitychange', onHidden);
   }, []);
 
+  /**
+   * Invalidates the computer turn in flight, if any.
+   *
+   * Called wherever the game the turn belongs to stops being the game on
+   * screen: resigning, retrying, starting again, unmounting. The token bump
+   * makes any reply still coming recognisably stale, and the timer clear stops
+   * a presentation delay firing into a game that no longer exists.
+   */
+  const abandonEngineTurn = useCallback(() => {
+    turnToken.current += 1;
+    if (thinkingTimer.current !== null) {
+      window.clearTimeout(thinkingTimer.current);
+      thinkingTimer.current = null;
+    }
+    setThinking(false);
+    void engineRef.current?.stop();
+  }, []);
+
   const failGame = useCallback((message: string) => {
     setEngineError(message);
     setThinking(false);
@@ -135,17 +173,44 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
     setPhase('over');
   }, []);
 
-  /** Asks the engine for a move and applies it, or stops the game. */
+  /**
+   * Asks the engine for a move and applies it, or stops the game.
+   *
+   * The reply is held back until `MIN_THINKING_MS` has passed, because a
+   * computer that answers in 40 ms is indistinguishable from one that did not
+   * answer at all — reported from a real device as "I cannot tell that a move
+   * occurred". The wait runs *concurrently* with the search rather than after
+   * it, so a slow level is not slowed further; only an implausibly fast one is
+   * held.
+   */
   const takeEngineTurn = useCallback(
     async (state: EngineGameState) => {
       const engine = engineRef.current;
       if (engine === null) return;
 
+      // Every turn carries a token. A reply belonging to an abandoned turn —
+      // after resign, retry, a new game or unmount — is dropped rather than
+      // played onto a position it was never computed for.
+      turnToken.current += 1;
+      const token = turnToken.current;
+      const stale = (): boolean => turnToken.current !== token;
+
       setThinking(true);
+      const startedAt = Date.now();
+
       try {
         const move = await engine.chooseMove({ fen: 'startpos', moves: state.uciHistory });
-        const outcome = applyEngineMove(state, move.uci);
+        if (stale()) return;
 
+        const elapsed = Date.now() - startedAt;
+        if (elapsed < MIN_THINKING_MS) {
+          await new Promise<void>((resolve) => {
+            thinkingTimer.current = window.setTimeout(resolve, MIN_THINKING_MS - elapsed);
+          });
+        }
+        if (stale()) return;
+
+        const outcome = applyEngineMove(state, move.uci);
         if (!outcome.ok) {
           // chess.js refused it. The engine is not allowed to be right about
           // this, so the game stops rather than continuing from a position
@@ -154,19 +219,23 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
           return;
         }
 
+        // Position, move list, last-move marks and turn indicator all come
+        // from one state value, so they can never disagree with each other.
         setThinking(false);
         setGame(outcome.state);
 
         const played = outcome.state.history[outcome.state.history.length - 1];
-        if (played !== undefined && speakMoves) void speak(played.san);
+        if (played !== undefined) {
+          if (preferences.sound) playTone('correct');
+          if (speakMoves) void speak(played.san);
+        }
         if (outcome.state.result.kind !== 'in-progress') setPhase('over');
       } catch (error) {
-        failGame(
-          `The computer could not find a move: ${(error as Error).message}`,
-        );
+        if (stale()) return;
+        failGame(`The computer could not find a move: ${(error as Error).message}`);
       }
     },
-    [failGame, speakMoves],
+    [failGame, preferences.sound, speakMoves],
   );
 
   const beginGame = useCallback(async () => {
@@ -195,16 +264,28 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
     }
   }, [difficulty, engineFactory, failGame, side, takeEngineTurn]);
 
+  /*
+   * Any presentation delay in flight is dropped when the screen goes away.
+   * Bumping the token first means a reply that arrives during teardown is
+   * recognised as stale and never applied.
+   */
+  useEffect(() => {
+    return () => {
+      turnToken.current += 1;
+      if (thinkingTimer.current !== null) window.clearTimeout(thinkingTimer.current);
+    };
+  }, []);
+
   // A rejected move flashes and clears itself.
   useEffect(() => {
     if (game?.rejection == null) return;
-    vibrate('error');
-    playTone('wrong');
+    if (preferences.haptics) vibrate('error');
+    if (preferences.sound) playTone('wrong');
     const timer = window.setTimeout(() => {
       setGame((current) => (current === null ? current : clearRejection(current)));
     }, FLASH_MS);
     return () => window.clearTimeout(timer);
-  }, [game?.rejection]);
+  }, [game?.rejection, preferences.haptics, preferences.sound]);
 
   /*
    * The engine turn is started here rather than inside the `setGame` updater.
@@ -230,11 +311,18 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
       // Nothing was played: an illegal move, already flashed by `next`.
       if (next.history.length === current.history.length) return;
 
-      playTone('correct');
+      if (preferences.sound) playTone('correct');
+
+      // The user's own move is spoken too. Only the engine's was, which made
+      // "read moves aloud" a half-feature: an illegal attempt is never spoken,
+      // because it never became a move.
+      const played = next.history[next.history.length - 1];
+      if (played !== undefined && speakMoves) void speak(played.san);
+
       if (next.result.kind !== 'in-progress') setPhase('over');
       else void takeEngineTurn(next);
     },
-    [takeEngineTurn],
+    [preferences.sound, speakMoves, takeEngineTurn],
   );
 
   const tapSquare = useCallback(
@@ -433,6 +521,7 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
               className="button button--primary"
               data-testid="engine-retry"
               onClick={() => {
+                abandonEngineTurn();
                 void (async () => {
                   await releaseEngine();
                   engineRef.current = null;
@@ -463,10 +552,22 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
         <p className="blindfold__moves" data-testid="engine-moves">
           {moveListText(game.history) || ' '}
         </p>
+        {/* Who played what, in words. The last-move marks on the board are
+            amber squares; on their own they would be information carried by
+            colour alone, and on a hidden board they are all there is. This
+            line is a live region, so a screen reader announces the computer's
+            reply rather than the user having to go looking for it. */}
         {lastMove !== undefined ? (
-          <p className="card__subtitle" data-testid="engine-last-move">
-            Last move: {lastMove.san}
-            {lastMove.captured !== null ? ` (took a ${pieceWord(lastMove.captured)})` : ''}
+          <p
+            className="engine-last-move"
+            data-testid="engine-last-move"
+            role="status"
+            aria-live="polite"
+          >
+            {lastMove.color === game.userSide ? 'You played' : 'Computer played'}{' '}
+            <strong>{lastMove.san}</strong>
+            {lastMove.captured !== null ? ` — took a ${pieceWord(lastMove.captured)}` : ''}
+            {lastMove.checkmate ? ' — checkmate' : lastMove.check ? ' — check' : ''}
           </p>
         ) : null}
         {userCaptures.length + engineCaptures.length > 0 ? (
@@ -523,6 +624,7 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
               type="button"
               className="button button--primary"
               onClick={() => {
+                abandonEngineTurn();
                 setGame(null);
                 setEngineError(null);
                 setPhase('setup');
@@ -542,7 +644,14 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
           <button
             type="button"
             className="button"
-            onClick={() => setGame((current) => (current === null ? current : resign(current)))}
+            onClick={() => {
+              // Abandon any computer turn in flight first. Without this a
+              // reply that arrives after the resignation is applied on top of
+              // it, and the finished game silently resumes.
+              abandonEngineTurn();
+              setGame((current) => (current === null ? current : resign(current)));
+              setPhase('over');
+            }}
             data-testid="engine-resign"
           >
             Resign

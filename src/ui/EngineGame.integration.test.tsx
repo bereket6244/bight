@@ -9,12 +9,39 @@
  */
 
 import 'fake-indexeddb/auto';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { EngineGameScreen } from './screens/EngineGameScreen';
+import { EngineGameScreen, MIN_THINKING_MS } from './screens/EngineGameScreen';
 import { AppProvider } from './state/AppContext';
 import type { EngineMove, EngineService, EngineStatus } from '../services/engine';
+/**
+ * Everything spoken, so "read moves aloud" can be asserted without a device.
+ *
+ * The module is mocked rather than spied on: the screen imports `speak`
+ * directly, and rebinding the namespace export does not change a binding that
+ * has already been imported.
+ *
+ * Actual audio output still needs real hardware. This proves the app asks for
+ * it, for both sides, and never for a move that was refused.
+ */
+const spoken: string[] = [];
+
+vi.mock('../services/speech', () => ({
+  speak: async (text: string) => {
+    spoken.push(text);
+  },
+  speechAvailable: () => true,
+  stopSpeaking: () => undefined,
+}));
+
+function speechCalls(): string[] {
+  return [...spoken];
+}
+
+beforeEach(() => {
+  spoken.length = 0;
+});
 
 /** An engine that plays from a script, or misbehaves on demand. */
 function fakeEngine(
@@ -479,5 +506,202 @@ describe('playing with the board hidden', () => {
 
     await user.click(screen.getByTestId('square-e2'));
     expect(document.querySelectorAll('.square--origin')).toHaveLength(0);
+  });
+});
+
+
+/* ------------------------------------------------------------------ *
+ * Move cadence and emphasis
+ *
+ * Reported from a real Android device: "the computer replies so quickly that
+ * I cannot perceive a move occurred". These prove the reply is held long
+ * enough to notice, marked on the board, and stated in words.
+ *
+ * Real timers throughout. Fake timers cannot be used here: the app provider
+ * opens its repository asynchronously, and freezing the clock during render
+ * hangs it before the screen ever appears.
+ * ------------------------------------------------------------------ */
+describe('making the computer reply perceptible', () => {
+  it('does not apply an instant engine reply instantly', async () => {
+    const user = userEvent.setup();
+    // The fake engine answers in microseconds, as a shallow search nearly does.
+    await renderGame(fakeEngine({ moves: ['e7e5'] }));
+
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+    await tapMove(user, 'e2', 'e4');
+
+    // The user's move is in; the computer is visibly thinking and has not yet
+    // replied. This is the state the device report said was never visible.
+    await waitFor(() => expect(screen.getByTestId('engine-moves')).toHaveTextContent('1. e4'));
+    expect(screen.getByTestId('engine-moves')).not.toHaveTextContent('e5');
+    expect(screen.getByTestId('engine-turn')).toHaveTextContent(/thinking/i);
+
+    // And it lands only after the minimum presentation interval.
+    await waitFor(() => expect(screen.getByTestId('engine-moves')).toHaveTextContent('e5'), {
+      timeout: MIN_THINKING_MS * 4,
+    });
+    expect(screen.getByTestId('engine-turn')).toHaveTextContent('Your move');
+  });
+
+  it('holds the reply for at least the minimum interval', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine({ moves: ['e7e5'] }));
+
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+
+    const started = Date.now();
+    await tapMove(user, 'e2', 'e4');
+    await waitFor(() => expect(screen.getByTestId('engine-moves')).toHaveTextContent('e5'), {
+      timeout: MIN_THINKING_MS * 4,
+    });
+
+    // Measured rather than assumed. A little slack for scheduling jitter.
+    expect(Date.now() - started).toBeGreaterThanOrEqual(MIN_THINKING_MS - 100);
+  });
+
+  it('shows the user move on the board while the computer thinks', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine({ moves: ['e7e5'] }));
+
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+    await tapMove(user, 'e2', 'e4');
+
+    await waitFor(() =>
+      expect(screen.getByTestId('square-e2').className).toContain('square--last-from'),
+    );
+    expect(screen.getByTestId('square-e4').className).toContain('square--last-to');
+    expect(screen.getByTestId('engine-last-move')).toHaveTextContent('You played');
+  });
+
+  it('marks and announces the engine move once it lands', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine({ moves: ['e7e5'] }));
+
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+    await tapMove(user, 'e2', 'e4');
+
+    await waitFor(
+      () => expect(screen.getByTestId('engine-last-move')).toHaveTextContent('Computer played'),
+      { timeout: MIN_THINKING_MS * 4 },
+    );
+    expect(screen.getByTestId('engine-last-move')).toHaveTextContent('e5');
+    expect(screen.getByTestId('square-e7').className).toContain('square--last-from');
+    expect(screen.getByTestId('square-e5').className).toContain('square--last-to');
+  });
+
+  it('marks the engine move on the hidden grid too, without drawing pieces', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine({ moves: ['e7e5'] }));
+
+    await user.click(screen.getByTestId('engine-visibility-never'));
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+    await tapMove(user, 'e2', 'e4');
+
+    await waitFor(
+      () => expect(screen.getByTestId('square-e5').className).toContain('square--last-to'),
+      { timeout: MIN_THINKING_MS * 4 },
+    );
+    // The marks are allowed — the user can read the move in SAN already. The
+    // pieces are not.
+    expect(document.querySelectorAll('.square svg')).toHaveLength(0);
+  });
+
+  it('refuses a second user move while the computer is thinking', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine({ moves: ['e7e5'] }));
+
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+    await tapMove(user, 'e2', 'e4');
+    await waitFor(() => expect(screen.getByTestId('engine-turn')).toHaveTextContent(/thinking/i));
+
+    await tapMove(user, 'd2', 'd4');
+    await waitFor(() => expect(screen.getByTestId('engine-moves')).toHaveTextContent('e5'), {
+      timeout: MIN_THINKING_MS * 4,
+    });
+    expect(screen.getByTestId('engine-moves')).not.toHaveTextContent('d4');
+  });
+
+  it('never leaves "Computer thinking" up after the move lands', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine({ moves: ['e7e5'] }));
+
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+    await tapMove(user, 'e2', 'e4');
+
+    await waitFor(() => expect(screen.getByTestId('engine-turn')).toHaveTextContent('Your move'), {
+      timeout: MIN_THINKING_MS * 4,
+    });
+    expect(screen.getByTestId('engine-turn')).not.toHaveTextContent(/thinking/i);
+  });
+
+  it('drops a delayed reply belonging to a game the user has left', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine({ moves: ['e7e5'] }));
+
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+    await tapMove(user, 'e2', 'e4');
+    await waitFor(() => expect(screen.getByTestId('engine-turn')).toHaveTextContent(/thinking/i));
+
+    // Resign while the presentation delay is still running.
+    await user.click(screen.getByTestId('engine-resign'));
+    await new Promise((resolve) => setTimeout(resolve, MIN_THINKING_MS + 400));
+
+    // The abandoned reply must not have been played onto the finished game.
+    expect(screen.getByTestId('engine-result')).toHaveTextContent('You resigned');
+    expect(screen.getByTestId('engine-moves')).not.toHaveTextContent('e5');
+  });
+
+  it('speaks both sides when spoken moves are on', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine({ moves: ['e7e5'] }));
+
+    await user.click(screen.getByTestId('engine-speak-on'));
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+    await tapMove(user, 'e2', 'e4');
+
+    await waitFor(
+      () => expect(screen.getByTestId('engine-last-move')).toHaveTextContent('Computer played'),
+      { timeout: MIN_THINKING_MS * 4 },
+    );
+
+    const said = speechCalls();
+    expect(said).toContain('e4');
+    expect(said).toContain('e5');
+  });
+
+  it('speaks nothing when spoken moves are off', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine({ moves: ['e7e5'] }));
+
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+    await tapMove(user, 'e2', 'e4');
+    await waitFor(
+      () => expect(screen.getByTestId('engine-last-move')).toHaveTextContent('Computer played'),
+      { timeout: MIN_THINKING_MS * 4 },
+    );
+
+    expect(speechCalls()).toHaveLength(0);
+  });
+
+  it('does not speak an illegal attempt, which never became a move', async () => {
+    const user = userEvent.setup();
+    await renderGame(fakeEngine());
+
+    await user.click(screen.getByTestId('engine-speak-on'));
+    await user.click(screen.getByTestId('engine-start'));
+    await screen.findByTestId('engine-game');
+    await tapMove(user, 'e2', 'e5');
+
+    expect(speechCalls()).toHaveLength(0);
   });
 });
