@@ -16,6 +16,7 @@ import { SessionScreen } from './screens/SessionScreen';
 import { questionModeVariants } from '../core/training/registry';
 import { defaultSettings } from '../core/session/settings';
 import type { SessionSettings } from '../core/session/settings';
+import { ADVANCE_LOCK_MS } from '../core/session/engine';
 import { squareColor } from '../core/chess/square';
 import type { SquareName } from '../core/chess/types';
 
@@ -470,6 +471,9 @@ describe('session controls', () => {
       const coordinate = screen.queryByTestId('prompt-coordinate')?.textContent?.trim() ?? '';
       if (coordinate === '') break;
       await user.click(screen.getByTestId(`square-${coordinate}`));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, ADVANCE_LOCK_MS + 20));
+      });
     }
 
     expect(await screen.findByTestId('session-summary')).toBeInTheDocument();
