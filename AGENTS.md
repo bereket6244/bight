@@ -80,8 +80,28 @@ Non-negotiable, and enforced by a test that runs over every registered mode:
 
 ### Offline and private
 
-Everything is on-device. The only network use in the whole repository is
-`scripts/fetch-voice-model.mjs`, a build-time download.
+Android is entirely on-device. The public Pages build may fetch only static
+Bight assets from its own `/bight/` origin; it has no API, backend, telemetry,
+or remote analysis service. `scripts/fetch-voice-model.mjs` is the only build
+step that downloads an asset from elsewhere.
+
+### GitHub Pages target
+
+`VITE_BIGHT_TARGET=web-demo` is the explicit public-web target. It differs
+from the ordinary app build in exactly these deliberate ways:
+
+- Vite base is `/bight/`; Android/local base remains `./`.
+- storage is `MemoryRepository` immediately, with no SQLite or IndexedDB probe;
+- unfinished engine games never touch `localStorage` and never offer Resume
+  after refresh;
+- a visible session-only notice and web licence links are compiled in.
+
+All copied runtime assets must go through `assetUrl()` and
+`import.meta.env.BASE_URL`. Never add an absolute `/engine/`, `/models/`, icon,
+sound, or generated-asset path that bypasses the configured base. Future
+changes must keep `npm run build`, `npm run build:pages`, and
+`npm run test:pages` working independently. The Android storage chain remains
+SQLite -> IndexedDB -> memory and must not inherit the web policy.
 
 ### Adding a mode
 

@@ -23,6 +23,7 @@ import { ENGINE_BUILD, ENGINE_PACKAGE_VERSION } from '../../services/engine';
 import { useVoiceCapability } from '../../services/voice/useVoice';
 import { effectiveVoiceEnabled, isVoiceUsable, voiceBadgeText } from '../../services/voice/state';
 import { speechAvailable } from '../../services/speech';
+import { assetUrl } from '../../core/runtimeTarget';
 
 /**
  * Reads a picked file as text.
@@ -359,6 +360,19 @@ export function SettingsScreen() {
           The full licence texts and the engine&rsquo;s source location ship with the
           repository.
         </p>
+        {__BIGHT_WEB_DEMO__ ? (
+          <p className="card__subtitle web-licence-links" data-testid="web-licence-links">
+            <a href={assetUrl('LICENSE')}>GPL licence</a>
+            {' · '}
+            <a href={assetUrl('LICENSE-MIT')}>MIT licence</a>
+            {' · '}
+            <a href={assetUrl('GPL_COMPLIANCE.md')}>GPL compliance</a>
+            {' · '}
+            <a href={assetUrl('ENGINE_SOURCE.md')}>Engine source</a>
+            {' · '}
+            <a href={assetUrl('THIRD_PARTY_NOTICES.md')}>Third-party notices</a>
+          </p>
+        ) : null}
       </div>
     </div>
   );

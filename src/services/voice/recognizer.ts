@@ -13,6 +13,7 @@
  */
 
 import { buildVocabulary, interpretCandidates, type ParseOptions, type VoiceResult } from './grammar';
+import { assetUrl } from '../../core/runtimeTarget';
 
 export type VoiceAvailability =
   | { state: 'checking' }
@@ -33,10 +34,16 @@ export type VoiceAvailability =
  * This was found by inspecting the built APK: the entry really is
  * `assets/public/models/vosk-model-small-en-us-0.15.tar`.
  */
-export const MODEL_PATHS = [
+const MODEL_FILES = [
   'models/vosk-model-small-en-us-0.15.tar.gz',
   'models/vosk-model-small-en-us-0.15.tar',
 ] as const;
+
+export function voiceModelUrls(baseUrl: string = import.meta.env.BASE_URL): string[] {
+  return MODEL_FILES.map((path) => assetUrl(path, baseUrl));
+}
+
+export const MODEL_PATHS = voiceModelUrls();
 
 /** The path that answered a HEAD request, once one has. */
 let resolvedModelPath: string | null = null;

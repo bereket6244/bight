@@ -134,6 +134,23 @@ body {
   padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + var(--gap));
 }
 
+.web-session-notice {
+  max-width: var(--content-max);
+  margin: 0 auto var(--gap);
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.web-licence-links {
+  margin-top: 8px;
+  line-height: 1.7;
+}
+
 /* A session takes the whole shell: no bottom nav competing with the board. */
 .app--session .app__main {
   padding-bottom: calc(var(--gap) * 2 + var(--safe-bottom));

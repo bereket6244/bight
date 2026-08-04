@@ -2,6 +2,21 @@
 
 All notable changes to Bight. Dates are the day the work landed.
 
+## Unreleased — public web version
+
+### Added
+
+- A GitHub Pages target at <https://bereket6244.github.io/bight/>, deployed
+  automatically from `main` with the official Pages Actions.
+- Session-only web storage: the Pages build uses `MemoryRepository`, never
+  probes IndexedDB, and never reads or writes unfinished engine games in
+  `localStorage`. Android persistence is unchanged.
+- Base-aware static asset URLs for Stockfish and Vosk, a `/bight/` production
+  build, lazy same-origin voice model, SPA fallback, public GPL/source notices,
+  and real-Chromium verification that boots Stockfish beneath the project path.
+
+No Android version or release artifact changed for this deployment.
+
 ## 2.2.0 — 2026-08-01 (look at the position)
 
 ### Added

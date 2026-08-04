@@ -11,7 +11,7 @@ in `release/RELEASES.md`; version history is in `CHANGELOG.md`.
 | | |
 | --- | --- |
 | Branch | `main` |
-| Remote | `https://github.com/bereket6244/bight` (private) |
+| Remote | `https://github.com/bereket6244/bight` (public) |
 | Latest tag | `v2.2.0-gpl-engine` |
 
 ## Application

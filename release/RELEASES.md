@@ -2,6 +2,10 @@
 
 Every verified build, what is in it, and how to get it.
 
+The public session-only web deployment is not an Android release and does not
+add an APK row. Its build and provenance are documented in
+[`WEB_DEPLOYMENT.md`](../WEB_DEPLOYMENT.md).
+
 Filenames carry the version, the licence and the variant, because a file
 called `Bight.apk` tells you none of the three:
 
@@ -100,8 +104,7 @@ engine, under MIT. Still a good build if the GPL obligation is unwanted.
 ## Getting a build
 
 Preferred: the GitHub Release for the tag, which carries the APK and its
-`.sha256`. Every tag has one, on a private repository, so the links need an
-authenticated account:
+`.sha256`. Every tag has one in the public repository:
 
 | Tag | Release | APK attached |
 | --- | --- | --- |

@@ -19,6 +19,7 @@ import { EngineGameScreen } from './screens/EngineGameScreen';
 import { findMode } from '../core/training/registry';
 import type { SessionSettings } from '../core/session/settings';
 import { useApp } from './state/AppContext';
+import { WebSessionNotice } from './components/WebSessionNotice';
 
 type Tab = 'home' | 'modes' | 'progress' | 'history' | 'settings';
 
@@ -150,6 +151,7 @@ export function App() {
   return (
     <div className="app">
       <main className="app__main">
+        {__BIGHT_WEB_DEMO__ ? <WebSessionNotice visible /> : null}
         <ErrorBoundary label={TABS.find((t) => t.id === tab)?.label}>
           {tab === 'home' ? (
             <HomeScreen onStart={startSession} onBrowseModes={() => setTab('modes')} />

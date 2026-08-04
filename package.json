@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "vite",
     "build": "node scripts/prepare-engine.mjs && tsc --noEmit && vite build",
+    "build:pages": "npm run prepare:engine && npm run typecheck && node scripts/build-pages.mjs",
     "preview": "vite preview",
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc --noEmit",
@@ -30,6 +31,7 @@
     "release:android": "node scripts/release-android.mjs",
     "verify:licenses": "node scripts/verify-licenses.mjs",
     "test:layout": "node scripts/blindfold-layout-check.mjs",
+    "test:pages": "node scripts/test-pages.mjs",
     "verify:release": "node scripts/verify-release-state.mjs"
   },
   "dependencies": {

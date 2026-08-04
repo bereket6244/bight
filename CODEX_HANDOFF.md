@@ -15,12 +15,14 @@ buried.
 | Engine commit | `3cb106d` — the offline Stockfish opponent |
 | Repair pass | `e45104c`, `163cb51`, `85d933a`, `d38e59e`, `91b4675` — the four device-reported failures and the release pipeline |
 | Reveal control | 2.2.0 — Show/Hide pieces in the engine game, without touching the visibility setting |
+| Public web | `https://bereket6244.github.io/bight/`, deployed from `main` by `.github/workflows/pages.yml` |
+| Web storage | Session-only `MemoryRepository`; no IndexedDB or engine-game `localStorage` |
 | App version | **2.2.0** (`src/core/version.ts` is the source of truth) |
 | Android versionCode | 20200 (derived: major×10000 + minor×100 + patch) |
 | Storage schema | **1, unchanged** — the blindfold fields are optional |
 | Backup format | `bight-backup`, schemaVersion 1; 1.3.0 backups import untouched |
 | Licence | **GPL-3.0-or-later.** 1.4.0 was the last engine-free MIT build. |
-| Tests | Vitest, **993 across 35 files**, plus 48 layout + 64 blindfold-layout checks |
+| Tests | Vitest, **1,003 across 37 files**, plus 48 layout + 64 blindfold-layout + 11 Pages checks |
 
 ### APKs
 
@@ -35,6 +37,28 @@ All debug-signed. No production signing key exists for this project and none
 was fabricated. The 1.4.0 build is kept deliberately: if the engine has to be
 withdrawn, a known-good engine-free build already exists. Full index with
 provenance in `release/RELEASES.md`.
+
+## Public web target
+
+The GitHub Pages build is a separate runtime target, not a weakening of the
+Android app. `scripts/build-pages.mjs` sets `VITE_BIGHT_TARGET=web-demo`; Vite
+uses `/bight/` as the base, while ordinary builds keep the Capacitor-safe `./`
+base. `core/runtimeTarget.ts` owns the target and `assetUrl()` boundary used by
+Stockfish, Vosk, icons, and web licence links.
+
+Pages goes directly to `MemoryRepository`. Attempts, sessions, mastery,
+recommendations, preferences, and unfinished games live only until refresh;
+session summaries still use the same in-memory repository during the current
+page. Android keeps SQLite -> IndexedDB -> memory and persistent unfinished-game
+resume. Do not fold these policies together.
+
+The Pages artifact includes Stockfish, the fetched Vosk model, `.nojekyll`, a
+`404.html` SPA fallback, and the GPL/source-notice documents. The large Vosk
+model is probed with HEAD and loaded only when voice input is actually used;
+ordinary drills and the engine do not depend on it. `npm run test:pages` serves
+the production artifact beneath a simulated `/bight/`, checks paths and MIME
+types, boots the real engine, and asserts that no IndexedDB database appears.
+Full operational notes are in `WEB_DEPLOYMENT.md`.
 
 ## Modes
 
@@ -227,36 +251,20 @@ the labels as behavioural descriptions. Do not invent an Elo.
 download the voice model on demand, or ship an engine-free variant. Splitting
 the engine out would also separate the GPL obligation cleanly.
 
-### 4. Persist an unfinished engine game
-
-The game state is already a plain serialisable value, so this is small.
-
-### 5. Curated sequences
+### 4. Curated sequences
 
 Real games or thematic positions instead of weighted-random legal moves.
 
-### 6. Speech for blindfold moves
+### 5. Speech for blindfold moves
 
 `speakMoves` is wired; it needs a test and a listen on a device.
 
-## The GPL question, for whoever decides it
+## Licence state
 
-**`main` is MIT and ships no engine. This branch is GPLv3 because it does.**
-Nothing has been merged and nothing about `main` has changed.
-
-Three options, all legitimate:
-
-1. **Leave the branch unmerged.** `main` stays MIT and engine-free; the engine
-   build is available from this branch. Nothing more to do.
-2. **Merge it.** `main` becomes GPLv3. That is the repository owner's decision
-   and it is one-way for the distributed application. Bight's own code stays
-   available under MIT because there is a single copyright holder.
-3. **Split it.** An MIT drills-only line and a GPL engine line. More
-   maintenance, cleanest licensing.
-
-To undo the engine entirely, `ENGINE_INTEGRATION.md` lists the exact five
-steps. Nothing outside those files depends on it — that is what the isolated
-boundary was for.
+`main` is GPL-3.0-or-later and ships Stockfish. Bight's own code remains
+available under MIT in `LICENSE-MIT`; 1.4.0 is the preserved engine-free MIT
+release. The Android APK and public Pages artifact both distribute Stockfish,
+so both must retain the GPL, engine-source, and third-party notices.
 
 ## Workflow
 

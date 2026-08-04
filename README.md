@@ -14,6 +14,11 @@ your phone, as the end of that progression rather than as a general chess app.
 Everything runs on the device. No account, no server, no adverts, no
 telemetry, no network calls of any kind after installation.
 
+**Use Bight on the web:** <https://bereket6244.github.io/bight/>. The public
+web version keeps progress only for the current browser session; refreshing or
+closing the page clears it. The Android app continues to store progress and
+unfinished engine games on the device.
+
 ---
 
 ## What you can practice
@@ -184,6 +189,25 @@ npm run dev
 Opens the app in a browser at `http://localhost:5173`. Everything except the
 native plugins works there; storage falls back to IndexedDB.
 
+### Public web version
+
+GitHub Pages deploys the static web target from `main` through
+`.github/workflows/pages.yml`:
+
+```bash
+npm run fetch:voice-model
+npm run build:pages
+npm run test:pages
+```
+
+The Pages build is served beneath `/bight/`, runs Stockfish locally in a Web
+Worker, and hosts the Vosk model as a same-origin static file that is loaded
+only when voice input is used. It deliberately selects the in-memory
+repository and bypasses unfinished-game `localStorage`, so attempts, mastery,
+history, recommendations, preferences, and engine games do not survive a
+refresh. Session statistics and the end-of-session summary still work until
+then. See `WEB_DEPLOYMENT.md` for the deployment and verification contract.
+
 ### Optional: offline voice answers
 
 The Vosk speech model is ~39 MB and is not committed to the repository. Fetch
@@ -279,6 +303,10 @@ The same contract test suite runs against them, which is what makes the
 fallback safe. If everything fails the app still trains — Settings just says
 progress will not be saved.
 
+The GitHub Pages target is an explicit storage exception: it selects the
+in-memory repository immediately and never probes SQLite or IndexedDB. This
+does not change the Android/development fallback chain described above.
+
 ### How mastery works
 
 A square counts as mastered when four things are true together: you answer it
@@ -306,6 +334,10 @@ waiting, no paid unlocks and no notifications pressuring you back.
 Bight collects nothing and sends nothing. All data stays in the app's private
 storage on your device.
 
+On the public web version, training data stays only in memory for the current
+page session. Static JavaScript, engine, voice, artwork, and licence files are
+served from the same `/bight/` Pages site; there is no backend or analytics.
+
 The microphone permission is declared so voice answers can be offered, and is
 only requested when you actually start a session with voice switched on.
 Recognition runs entirely on-device.
@@ -321,6 +353,7 @@ for broad storage access.
 | `AUDIT_REPORT.md` | Every requested feature and its verified status |
 | `TEST_REPORT.md` | Commands run, counts, results |
 | `BACKUP_FORMAT.md` | Backup schema and migration policy |
+| `WEB_DEPLOYMENT.md` | GitHub Pages target, storage, assets and verification |
 | `THIRD_PARTY_NOTICES.md` | Dependencies and licences |
 
 ## Licence
@@ -338,7 +371,7 @@ Builds are named for what they are:
 
     Bight-v<version>-<licence>-<variant>.apk
 
-The latest is `release/Bight-v2.1.0-GPL-engine.apk`, with its `.sha256`
+The latest is `release/Bight-v2.2.0-GPL-engine.apk`, with its `.sha256`
 alongside. `release/Bight.apk` is a byte-identical convenience copy. Every
 verified build is indexed in `release/RELEASES.md`.
 

@@ -9,10 +9,21 @@
  */
 
 import type { EngineDifficulty } from './engineTypes';
+import { assetUrl } from '../../core/runtimeTarget';
 
 /** Path the Worker is constructed from. Copied by scripts/prepare-engine.mjs. */
-export const ENGINE_WORKER_PATH = 'engine/stockfish-18-lite-single.js';
-export const ENGINE_WASM_PATH = 'engine/stockfish-18-lite-single.wasm';
+export function engineAssetUrls(baseUrl: string = import.meta.env.BASE_URL): {
+  worker: string;
+  wasm: string;
+} {
+  return {
+    worker: assetUrl('engine/stockfish-18-lite-single.js', baseUrl),
+    wasm: assetUrl('engine/stockfish-18-lite-single.wasm', baseUrl),
+  };
+}
+
+export const ENGINE_WORKER_PATH = engineAssetUrls().worker;
+export const ENGINE_WASM_PATH = engineAssetUrls().wasm;
 
 /**
  * The exact build in use.

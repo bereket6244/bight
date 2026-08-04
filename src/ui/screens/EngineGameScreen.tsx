@@ -43,10 +43,14 @@ import {
   buildSave,
   describeSave,
   restoreSave,
-  SAVED_GAME_KEY,
   type RestoredGame,
 } from '../../core/engineGame/savedGame';
+import {
+  loadSavedEngineGame,
+  storeSavedEngineGame,
+} from '../../core/engineGame/savedGameStorage';
 import { APP_VERSION } from '../../core/version';
+import { RUNTIME_TARGET } from '../../core/runtimeTarget';
 
 /** How long a rejected move stays red. */
 const FLASH_MS = 420;
@@ -176,8 +180,11 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
       appVersion: APP_VERSION,
     });
     try {
-      if (record === null) window.localStorage.removeItem(SAVED_GAME_KEY);
-      else window.localStorage.setItem(SAVED_GAME_KEY, JSON.stringify(record));
+      storeSavedEngineGame(
+        window.localStorage,
+        RUNTIME_TARGET,
+        record === null ? null : JSON.stringify(record),
+      );
     } catch {
       // Storage may be full or blocked. Losing the ability to resume is not
       // worth interrupting a game over.
@@ -187,13 +194,13 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
   // Look for a resumable game once, on entry.
   useEffect(() => {
     try {
-      const raw = window.localStorage.getItem(SAVED_GAME_KEY);
+      const raw = loadSavedEngineGame(window.localStorage, RUNTIME_TARGET);
       if (raw === null) return;
       const restored = restoreSave(JSON.parse(raw));
       if (restored === null) {
         // Unreadable, from an older format, or already finished. Discard it
         // rather than trying to interpret it.
-        window.localStorage.removeItem(SAVED_GAME_KEY);
+        storeSavedEngineGame(window.localStorage, RUNTIME_TARGET, null);
         return;
       }
       setResumable(restored);
@@ -555,7 +562,7 @@ export function EngineGameScreen({ onExit, engineFactory = getEngine }: EngineGa
                 onClick={() => {
                   setResumable(null);
                   try {
-                    window.localStorage.removeItem(SAVED_GAME_KEY);
+                    storeSavedEngineGame(window.localStorage, RUNTIME_TARGET, null);
                   } catch {
                     // Nothing to clean up if storage is unavailable.
                   }
