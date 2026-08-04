@@ -22,7 +22,7 @@ buried.
 | Storage schema | **1, unchanged** — the blindfold fields are optional |
 | Backup format | `bight-backup`, schemaVersion 1; 1.3.0 backups import untouched |
 | Licence | **GPL-3.0-or-later.** 1.4.0 was the last engine-free MIT build. |
-| Tests | Vitest, **1,003 across 37 files**, plus 48 layout + 64 blindfold-layout + 11 Pages checks |
+| Tests | Vitest, **1,003 across 37 files**, plus 48 layout + 64 blindfold-layout + 12 Pages checks |
 
 ### APKs
 

@@ -96,6 +96,18 @@ try {
     'the session-only notice is visible',
   );
 
+  await page.evaluate(() => {
+    const settings = [...document.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim().endsWith('Settings'),
+    );
+    settings?.click();
+  });
+  await page.waitForSelector('h1');
+  check(
+    (await page.$('a[href="/bight/ENGINE_LICENSES.md"]')) !== null,
+    'the deployed About card links to the engine licences',
+  );
+
   const assets = await page.evaluate(async () => {
     const worker = await fetch('/bight/engine/stockfish-18-lite-single.js');
     const wasm = await fetch('/bight/engine/stockfish-18-lite-single.wasm');

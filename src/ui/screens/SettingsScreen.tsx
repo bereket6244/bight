@@ -370,6 +370,8 @@ export function SettingsScreen() {
             {' · '}
             <a href={assetUrl('ENGINE_SOURCE.md')}>Engine source</a>
             {' · '}
+            <a href={assetUrl('ENGINE_LICENSES.md')}>Engine licences</a>
+            {' · '}
             <a href={assetUrl('THIRD_PARTY_NOTICES.md')}>Third-party notices</a>
           </p>
         ) : null}
